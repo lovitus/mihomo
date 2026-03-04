@@ -37,7 +37,7 @@ This fork exists to improve proxy-group selection stability for large deployment
 - `adapter/outboundgroup/fallback.go`
   - Reworked selected-node handling:
     - check the selected node first;
-    - if selected is unavailable, clear it and then scan all nodes for the first alive node.
+    - if selected is unavailable, clear it and then iterate all nodes in configured order, selecting the first alive node (serial order, not concurrent scan).
   - Reduces accidental fallback to an unhealthy first entry.
   - Added lock-protected selected-node state to avoid race conditions when manual override and automatic probing happen concurrently.
 - `adapter/outboundgroup/groupbase.go`
