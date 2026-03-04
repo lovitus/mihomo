@@ -43,11 +43,15 @@ git merge --no-ff upstream/Alpha
   - `adapter/outboundgroup/urltest.go`
   - `adapter/outboundgroup/fallback.go`
   - `adapter/outboundgroup/groupbase.go`
+- Keep local reliability patch in:
+  - `transport/sudoku/obfs/httpmask/tunnel.go`
 - Re-run formatting and compile checks:
 
 ```bash
-gofmt -w adapter/outboundgroup/urltest.go adapter/outboundgroup/fallback.go adapter/outboundgroup/groupbase.go
-go test ./adapter/outboundgroup ./hub/route
+gofmt -w adapter/outboundgroup/urltest.go adapter/outboundgroup/fallback.go adapter/outboundgroup/groupbase.go transport/sudoku/obfs/httpmask/tunnel.go
+go test ./...
+go vet ./...
+go test -race ./adapter/outboundgroup ./hub/route ./transport/sudoku/obfs/httpmask
 ```
 
 5. Fast smoke build.
@@ -90,5 +94,6 @@ When upstream changes the same selection files, prefer:
    - Prefer alive nodes over timeout nodes when at least one alive exists.
    - Refresh URLTest cached decision after group URL tests.
    - Fallback selected-node logic should re-scan all nodes after selected node becomes unavailable.
+   - Keep URLTest/Fallback state access lock-protected to avoid races between API updates and auto selection.
+   - Keep poll loop context cancel paths complete in `transport/sudoku/obfs/httpmask/tunnel.go`.
 3. Re-run `go test` for changed packages.
-

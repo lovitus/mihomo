@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/metacubex/mihomo/common/callback"
@@ -24,6 +25,7 @@ func urlTestWithTolerance(tolerance uint16) urlTestOption {
 
 type URLTest struct {
 	*GroupBase
+	stateMux       sync.RWMutex
 	selected       string
 	testUrl        string
 	expectedStatus string
@@ -55,7 +57,9 @@ func (u *URLTest) Set(name string) error {
 }
 
 func (u *URLTest) ForceSet(name string) {
+	u.stateMux.Lock()
 	u.selected = name
+	u.stateMux.Unlock()
 	u.fastSingle.Reset()
 }
 
@@ -109,13 +113,15 @@ func (u *URLTest) healthCheck() {
 func (u *URLTest) fast(touch bool) C.Proxy {
 	elm, _, shared := u.fastSingle.Do(func() (C.Proxy, error) {
 		proxies := u.GetProxies(touch)
-		if u.selected != "" {
+		selected, fastNode := u.snapshotState()
+
+		if selected != "" {
 			for _, proxy := range proxies {
 				if !proxy.AliveForTestUrl(u.testUrl) {
 					continue
 				}
-				if proxy.Name() == u.selected {
-					u.fastNode = proxy
+				if proxy.Name() == selected {
+					u.setFastNode(proxy)
 					return proxy, nil
 				}
 			}
@@ -129,7 +135,7 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 		)
 
 		for _, proxy := range proxies {
-			if u.fastNode != nil && proxy.Name() == u.fastNode.Name() {
+			if fastNode != nil && proxy.Name() == fastNode.Name() {
 				fastNotExist = false
 			}
 
@@ -148,20 +154,41 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 		// Do not fall back to timeout nodes when at least one alive node exists.
 		if hasAliveFast {
 			// tolerance
-			if u.fastNode == nil || fastNotExist || !u.fastNode.AliveForTestUrl(u.testUrl) || u.fastNode.LastDelayForTestUrl(u.testUrl) > fastDelay+u.tolerance {
-				u.fastNode = fast
+			if fastNode == nil || fastNotExist || !fastNode.AliveForTestUrl(u.testUrl) || fastNode.LastDelayForTestUrl(u.testUrl) > fastDelay+u.tolerance {
+				fastNode = fast
 			}
-		} else if u.fastNode == nil || fastNotExist || !u.fastNode.AliveForTestUrl(u.testUrl) {
-			u.fastNode = proxies[0]
+		} else if fastNode == nil || fastNotExist || !fastNode.AliveForTestUrl(u.testUrl) {
+			fastNode = proxies[0]
 		}
 
-		return u.fastNode, nil
+		u.setFastNode(fastNode)
+		return fastNode, nil
 	})
 	if shared && touch { // a shared fastSingle.Do() may cause providers untouched, so we touch them again
 		u.Touch()
 	}
 
 	return elm
+}
+
+func (u *URLTest) snapshotState() (string, C.Proxy) {
+	u.stateMux.RLock()
+	defer u.stateMux.RUnlock()
+
+	return u.selected, u.fastNode
+}
+
+func (u *URLTest) getSelected() string {
+	u.stateMux.RLock()
+	defer u.stateMux.RUnlock()
+
+	return u.selected
+}
+
+func (u *URLTest) setFastNode(proxy C.Proxy) {
+	u.stateMux.Lock()
+	u.fastNode = proxy
+	u.stateMux.Unlock()
 }
 
 // SupportUDP implements C.ProxyAdapter
@@ -189,7 +216,7 @@ func (u *URLTest) MarshalJSON() ([]byte, error) {
 		"all":            all,
 		"testUrl":        u.testUrl,
 		"expectedStatus": u.expectedStatus,
-		"fixed":          u.selected,
+		"fixed":          u.getSelected(),
 		"hidden":         u.Hidden,
 		"icon":           u.Icon,
 	})
