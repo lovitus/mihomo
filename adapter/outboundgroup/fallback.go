@@ -109,15 +109,12 @@ func (f *Fallback) findAliveProxy(touch bool) C.Proxy {
 
 	if len(selected) != 0 {
 		for _, proxy := range proxies {
-			if proxy.Name() != selected {
-				continue
-			}
-			if proxy.AliveForTestUrl(f.testUrl) {
+			if proxy.Name() == selected {
+				// Respect manual fixed selection as a hard override while it still exists in group members.
 				return proxy
 			}
-			f.clearSelectedIf(selected)
-			break
 		}
+		f.clearSelectedIf(selected)
 	}
 
 	for _, proxy := range proxies {

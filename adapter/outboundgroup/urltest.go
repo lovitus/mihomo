@@ -117,14 +117,13 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 
 		if selected != "" {
 			for _, proxy := range proxies {
-				if !proxy.AliveForTestUrl(u.testUrl) {
-					continue
-				}
 				if proxy.Name() == selected {
+					// Respect manual fixed selection as a hard override while it still exists in group members.
 					u.setFastNode(proxy)
 					return proxy, nil
 				}
 			}
+			u.clearSelectedIf(selected)
 		}
 
 		var (
@@ -188,6 +187,14 @@ func (u *URLTest) getSelected() string {
 func (u *URLTest) setFastNode(proxy C.Proxy) {
 	u.stateMux.Lock()
 	u.fastNode = proxy
+	u.stateMux.Unlock()
+}
+
+func (u *URLTest) clearSelectedIf(selected string) {
+	u.stateMux.Lock()
+	if u.selected == selected {
+		u.selected = ""
+	}
 	u.stateMux.Unlock()
 }
 

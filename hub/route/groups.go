@@ -7,7 +7,6 @@ import (
 
 	"github.com/metacubex/mihomo/adapter/outboundgroup"
 	"github.com/metacubex/mihomo/common/utils"
-	"github.com/metacubex/mihomo/component/profile/cachefile"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/tunnel"
 
@@ -57,11 +56,6 @@ func getGroupDelay(w http.ResponseWriter, r *http.Request) {
 		render.Status(r, http.StatusNotFound)
 		render.JSON(w, r, ErrNotFound)
 		return
-	}
-
-	if selectAble, ok := proxy.Adapter().(outboundgroup.SelectAble); ok && proxy.Type() != C.Selector {
-		selectAble.ForceSet("")
-		cachefile.Cache().SetSelected(proxy.Name(), "")
 	}
 
 	query := r.URL.Query()
