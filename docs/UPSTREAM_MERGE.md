@@ -8,6 +8,13 @@ This repository tracks upstream `MetaCubeX/mihomo` (branch `Alpha`) and keeps lo
 - `upstream/alpha-sync` (temporary): branch used to replay upstream updates.
 - local patch branch examples: `codex/fix-group-selection`.
 
+## Fork-Only Policy Patches
+
+The following behavior is intentionally fork-only and should not be proposed upstream unless policy changes:
+
+- Pinned/overridden node in `url-test`/`fallback` is treated as a hard override while the node still exists in group members.
+- Auto delay checks (`/group/{name}/delay`) must not clear manual pin/override state.
+
 ## One-Time Remote Setup
 
 ```bash
@@ -43,6 +50,7 @@ git merge --no-ff upstream/Alpha
   - `adapter/outboundgroup/urltest.go`
   - `adapter/outboundgroup/fallback.go`
   - `adapter/outboundgroup/groupbase.go`
+  - `hub/route/groups.go` (keep API delay path from clearing manual fixed selection)
 - Keep local reliability patch in:
   - `transport/sudoku/obfs/httpmask/tunnel.go`
 - Re-run formatting and compile checks:
@@ -93,7 +101,9 @@ When upstream changes the same selection files, prefer:
 2. Re-apply local policy:
    - Prefer alive nodes over timeout nodes when at least one alive exists.
    - Refresh URLTest cached decision after group URL tests.
-   - Fallback selected-node logic should re-scan all nodes after selected node becomes unavailable.
+   - Fallback selected-node logic should keep manual fixed selection while the selected node still exists in members; only clear fixed when it no longer exists, then scan in configured order for the first alive node.
+   - URLTest selected-node logic should keep manual fixed selection while the selected node still exists in members; only clear fixed when it no longer exists.
    - Keep URLTest/Fallback state access lock-protected to avoid races between API updates and auto selection.
+   - Keep `/group/{name}/delay` from force-clearing fixed selection for non-selector groups.
    - Keep poll loop context cancel paths complete in `transport/sudoku/obfs/httpmask/tunnel.go`.
 3. Re-run `go test` for changed packages.

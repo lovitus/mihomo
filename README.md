@@ -37,8 +37,9 @@ This fork exists to improve proxy-group selection stability for large deployment
 - `adapter/outboundgroup/fallback.go`
   - Reworked selected-node handling:
     - check the selected node first;
-    - if selected is unavailable, clear it and then iterate all nodes in configured order, selecting the first alive node (serial order, not concurrent scan).
-  - Reduces accidental fallback to an unhealthy first entry.
+    - if selected no longer exists in current group members, clear it and then iterate all nodes in configured order, selecting the first alive node (serial order, not concurrent scan).
+  - In this fork's special release policy, a manual pin/override is treated as a hard override while that node still exists in the group, and is not auto-cleared by delay checks.
+  - Reduces accidental fallback to an unhealthy entry when manual override is not set or becomes invalid.
   - Added lock-protected selected-node state to avoid race conditions when manual override and automatic probing happen concurrently.
 - `adapter/outboundgroup/groupbase.go`
   - Group delay map now records only nodes that are still alive for the tested URL.
@@ -47,6 +48,7 @@ This fork exists to improve proxy-group selection stability for large deployment
   - Fixed missing `cancel()` calls in poll pull loop early-return branches, avoiding context/timer leaks during long-running retry/failure conditions.
 - `docs/UPSTREAM_MERGE.md`
   - Added a dedicated upstream sync and conflict-resolution playbook for maintaining this fork over time.
+  - Notes which patches are fork-only (not intended for upstream PR), including the pin-stability special release behavior.
 
 ### Local validation done
 
