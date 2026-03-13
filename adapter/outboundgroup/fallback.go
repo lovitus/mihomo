@@ -17,18 +17,21 @@ import (
 
 type Fallback struct {
 	*GroupBase
-	stateMux        sync.RWMutex
-	disableUDP      bool
-	testUrl         string
-	selected        string
-	expectedStatus  string
-	persistentPin   bool
-	pinWarnInterval time.Duration
-	lastPinWarnAt   time.Time
-	lastPinWarnFor  string
-	lastPinWarnMsg  string
-	Hidden          bool
-	Icon            string
+	stateMux              sync.RWMutex
+	disableUDP            bool
+	testUrl               string
+	selected              string
+	expectedStatus        string
+	persistentPin         bool
+	pinWarnInterval       time.Duration
+	pinAutoUnfixThreshold int
+	pinAutoUnfixCount     int
+	pinAutoUnfixLastTest  time.Time
+	lastPinWarnAt         time.Time
+	lastPinWarnFor        string
+	lastPinWarnMsg        string
+	Hidden                bool
+	Icon                  string
 }
 
 func (f *Fallback) Now() string {
@@ -92,16 +95,17 @@ func (f *Fallback) MarshalJSON() ([]byte, error) {
 		all = append(all, proxy.Name())
 	}
 	return json.Marshal(map[string]any{
-		"type":                    f.Type().String(),
-		"now":                     f.Now(),
-		"all":                     all,
-		"testUrl":                 f.testUrl,
-		"expectedStatus":          f.expectedStatus,
-		"fixed":                   f.getSelected(),
-		"persistentPin":           f.persistentPin,
-		"pinUnhealthyLogInterval": int(f.pinWarnInterval / time.Second),
-		"hidden":                  f.Hidden,
-		"icon":                    f.Icon,
+		"type":                            f.Type().String(),
+		"now":                             f.Now(),
+		"all":                             all,
+		"testUrl":                         f.testUrl,
+		"expectedStatus":                  f.expectedStatus,
+		"fixed":                           f.getSelected(),
+		"persistentPin":                   f.persistentPin,
+		"pinUnhealthyLogInterval":         int(f.pinWarnInterval / time.Second),
+		"persistentPinAutoUnfixThreshold": f.pinAutoUnfixThreshold,
+		"hidden":                          f.Hidden,
+		"icon":                            f.Icon,
 	})
 }
 
@@ -123,6 +127,9 @@ func (f *Fallback) findAliveProxy(touch bool) C.Proxy {
 			}
 			foundSelected = true
 			if f.persistentPin {
+				if f.observePersistentPinnedResult(selected, proxy, proxies) {
+					break
+				}
 				if !proxy.AliveForTestUrl(f.testUrl) {
 					f.warnPersistentPinnedProxy(selected, "unhealthy")
 				}
@@ -191,6 +198,7 @@ func (f *Fallback) getSelected() string {
 func (f *Fallback) setSelected(name string) {
 	f.stateMux.Lock()
 	f.selected = name
+	f.resetPersistentPinStateLocked()
 	f.stateMux.Unlock()
 }
 
@@ -198,8 +206,84 @@ func (f *Fallback) clearSelectedIf(selected string) {
 	f.stateMux.Lock()
 	if f.selected == selected {
 		f.selected = ""
+		f.resetPersistentPinStateLocked()
 	}
 	f.stateMux.Unlock()
+}
+
+func (f *Fallback) resetPersistentPinStateLocked() {
+	f.pinAutoUnfixCount = 0
+	f.pinAutoUnfixLastTest = time.Time{}
+	f.lastPinWarnAt = time.Time{}
+	f.lastPinWarnFor = ""
+	f.lastPinWarnMsg = ""
+}
+
+func (f *Fallback) observePersistentPinnedResult(selected string, pinned C.Proxy, proxies []C.Proxy) bool {
+	history, ok := proxyTestHistory(pinned, f.testUrl)
+	if !ok {
+		return false
+	}
+	lastRecord := history[len(history)-1]
+	lastTestAt := lastRecord.Time
+	lastHealthy := lastRecord.Delay != 0
+	hasOtherAlive := false
+	if !lastHealthy {
+		for _, proxy := range proxies {
+			if proxy.Name() == selected {
+				continue
+			}
+			if proxy.AliveForTestUrl(f.testUrl) {
+				hasOtherAlive = true
+				break
+			}
+		}
+	}
+
+	threshold := f.pinAutoUnfixThreshold
+	if threshold <= 0 {
+		threshold = defaultPersistentPinAutoUnfixThreshold
+	}
+
+	autoUnfixed := false
+	reachedCount := 0
+	resetByHealthy := false
+
+	f.stateMux.Lock()
+	if f.selected != selected || !lastTestAt.After(f.pinAutoUnfixLastTest) {
+		f.stateMux.Unlock()
+		return false
+	}
+
+	for _, record := range history {
+		if record.Time.After(f.pinAutoUnfixLastTest) && record.Delay != 0 {
+			resetByHealthy = true
+			break
+		}
+	}
+	f.pinAutoUnfixLastTest = lastTestAt
+	if resetByHealthy {
+		f.pinAutoUnfixCount = 0
+	}
+	if lastHealthy {
+		f.pinAutoUnfixCount = 0
+	} else if hasOtherAlive {
+		f.pinAutoUnfixCount++
+		if f.pinAutoUnfixCount >= threshold {
+			reachedCount = f.pinAutoUnfixCount
+			f.selected = ""
+			f.resetPersistentPinStateLocked()
+			autoUnfixed = true
+		}
+	} else {
+		f.pinAutoUnfixCount = 0
+	}
+	f.stateMux.Unlock()
+
+	if autoUnfixed {
+		log.Warnln("group [%s] auto-unfixed persistent pin on proxy [%s] after %d consecutive unhealthy checks with alternative alive proxies", f.Name(), selected, reachedCount)
+	}
+	return autoUnfixed
 }
 
 func (f *Fallback) warnPersistentPinnedProxy(selected, reason string) {
@@ -243,6 +327,10 @@ func NewFallback(option *GroupCommonOption, providers []P.ProxyProvider) *Fallba
 	if option.PinUnhealthyLogInterval > 0 {
 		pinWarnInterval = time.Duration(option.PinUnhealthyLogInterval) * time.Second
 	}
+	pinAutoUnfixThreshold := defaultPersistentPinAutoUnfixThreshold
+	if option.PersistentPinAutoUnfixThreshold > 0 {
+		pinAutoUnfixThreshold = option.PersistentPinAutoUnfixThreshold
+	}
 
 	return &Fallback{
 		GroupBase: NewGroupBase(GroupBaseOption{
@@ -255,12 +343,13 @@ func NewFallback(option *GroupCommonOption, providers []P.ProxyProvider) *Fallba
 			MaxFailedTimes: option.MaxFailedTimes,
 			Providers:      providers,
 		}),
-		disableUDP:      option.DisableUDP,
-		testUrl:         option.URL,
-		expectedStatus:  option.ExpectedStatus,
-		persistentPin:   option.PersistentPin,
-		pinWarnInterval: pinWarnInterval,
-		Hidden:          option.Hidden,
-		Icon:            option.Icon,
+		disableUDP:            option.DisableUDP,
+		testUrl:               option.URL,
+		expectedStatus:        option.ExpectedStatus,
+		persistentPin:         option.PersistentPin,
+		pinWarnInterval:       pinWarnInterval,
+		pinAutoUnfixThreshold: pinAutoUnfixThreshold,
+		Hidden:                option.Hidden,
+		Icon:                  option.Icon,
 	}
 }
