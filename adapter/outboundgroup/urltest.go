@@ -26,21 +26,24 @@ func urlTestWithTolerance(tolerance uint16) urlTestOption {
 
 type URLTest struct {
 	*GroupBase
-	stateMux        sync.RWMutex
-	selected        string
-	testUrl         string
-	expectedStatus  string
-	tolerance       uint16
-	disableUDP      bool
-	persistentPin   bool
-	pinWarnInterval time.Duration
-	lastPinWarnAt   time.Time
-	lastPinWarnFor  string
-	lastPinWarnMsg  string
-	Hidden          bool
-	Icon            string
-	fastNode        C.Proxy
-	fastSingle      *singledo.Single[C.Proxy]
+	stateMux              sync.RWMutex
+	selected              string
+	testUrl               string
+	expectedStatus        string
+	tolerance             uint16
+	disableUDP            bool
+	persistentPin         bool
+	pinWarnInterval       time.Duration
+	pinAutoUnfixThreshold int
+	pinAutoUnfixCount     int
+	pinAutoUnfixLastTest  time.Time
+	lastPinWarnAt         time.Time
+	lastPinWarnFor        string
+	lastPinWarnMsg        string
+	Hidden                bool
+	Icon                  string
+	fastNode              C.Proxy
+	fastSingle            *singledo.Single[C.Proxy]
 }
 
 func (u *URLTest) Now() string {
@@ -125,6 +128,9 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 				if proxy.Name() == selected {
 					foundSelected = true
 					if u.persistentPin {
+						if u.observePersistentPinnedResult(selected, proxy, proxies) {
+							break
+						}
 						if !proxy.AliveForTestUrl(u.testUrl) {
 							u.warnPersistentPinnedProxy(selected, "unhealthy")
 						}
@@ -211,6 +217,7 @@ func (u *URLTest) setFastNode(proxy C.Proxy) {
 func (u *URLTest) setSelected(name string) {
 	u.stateMux.Lock()
 	u.selected = name
+	u.resetPersistentPinStateLocked()
 	u.stateMux.Unlock()
 }
 
@@ -218,6 +225,7 @@ func (u *URLTest) clearSelectedIf(selected string) {
 	u.stateMux.Lock()
 	if u.selected == selected {
 		u.selected = ""
+		u.resetPersistentPinStateLocked()
 	}
 	u.stateMux.Unlock()
 }
@@ -254,6 +262,81 @@ func (u *URLTest) warnPersistentPinnedProxy(selected, reason string) {
 	}
 }
 
+func (u *URLTest) resetPersistentPinStateLocked() {
+	u.pinAutoUnfixCount = 0
+	u.pinAutoUnfixLastTest = time.Time{}
+	u.lastPinWarnAt = time.Time{}
+	u.lastPinWarnFor = ""
+	u.lastPinWarnMsg = ""
+}
+
+func (u *URLTest) observePersistentPinnedResult(selected string, pinned C.Proxy, proxies []C.Proxy) bool {
+	history, ok := proxyTestHistory(pinned, u.testUrl)
+	if !ok {
+		return false
+	}
+	lastRecord := history[len(history)-1]
+	lastTestAt := lastRecord.Time
+	lastHealthy := lastRecord.Delay != 0
+	hasOtherAlive := false
+	if !lastHealthy {
+		for _, proxy := range proxies {
+			if proxy.Name() == selected {
+				continue
+			}
+			if proxy.AliveForTestUrl(u.testUrl) {
+				hasOtherAlive = true
+				break
+			}
+		}
+	}
+
+	threshold := u.pinAutoUnfixThreshold
+	if threshold <= 0 {
+		threshold = defaultPersistentPinAutoUnfixThreshold
+	}
+
+	autoUnfixed := false
+	reachedCount := 0
+	resetByHealthy := false
+
+	u.stateMux.Lock()
+	if u.selected != selected || !lastTestAt.After(u.pinAutoUnfixLastTest) {
+		u.stateMux.Unlock()
+		return false
+	}
+
+	for _, record := range history {
+		if record.Time.After(u.pinAutoUnfixLastTest) && record.Delay != 0 {
+			resetByHealthy = true
+			break
+		}
+	}
+	u.pinAutoUnfixLastTest = lastTestAt
+	if resetByHealthy {
+		u.pinAutoUnfixCount = 0
+	}
+	if lastHealthy {
+		u.pinAutoUnfixCount = 0
+	} else if hasOtherAlive {
+		u.pinAutoUnfixCount++
+		if u.pinAutoUnfixCount >= threshold {
+			reachedCount = u.pinAutoUnfixCount
+			u.selected = ""
+			u.resetPersistentPinStateLocked()
+			autoUnfixed = true
+		}
+	} else {
+		u.pinAutoUnfixCount = 0
+	}
+	u.stateMux.Unlock()
+
+	if autoUnfixed {
+		log.Warnln("group [%s] auto-unfixed persistent pin on proxy [%s] after %d consecutive unhealthy checks with alternative alive proxies", u.Name(), selected, reachedCount)
+	}
+	return autoUnfixed
+}
+
 // SupportUDP implements C.ProxyAdapter
 func (u *URLTest) SupportUDP() bool {
 	if u.disableUDP {
@@ -274,16 +357,17 @@ func (u *URLTest) MarshalJSON() ([]byte, error) {
 		all = append(all, proxy.Name())
 	}
 	return json.Marshal(map[string]any{
-		"type":                    u.Type().String(),
-		"now":                     u.Now(),
-		"all":                     all,
-		"testUrl":                 u.testUrl,
-		"expectedStatus":          u.expectedStatus,
-		"fixed":                   u.getSelected(),
-		"persistentPin":           u.persistentPin,
-		"pinUnhealthyLogInterval": int(u.pinWarnInterval / time.Second),
-		"hidden":                  u.Hidden,
-		"icon":                    u.Icon,
+		"type":                            u.Type().String(),
+		"now":                             u.Now(),
+		"all":                             all,
+		"testUrl":                         u.testUrl,
+		"expectedStatus":                  u.expectedStatus,
+		"fixed":                           u.getSelected(),
+		"persistentPin":                   u.persistentPin,
+		"pinUnhealthyLogInterval":         int(u.pinWarnInterval / time.Second),
+		"persistentPinAutoUnfixThreshold": u.pinAutoUnfixThreshold,
+		"hidden":                          u.Hidden,
+		"icon":                            u.Icon,
 	})
 }
 
@@ -321,6 +405,10 @@ func NewURLTest(option *GroupCommonOption, providers []P.ProxyProvider, options 
 	if option.PinUnhealthyLogInterval > 0 {
 		pinWarnInterval = time.Duration(option.PinUnhealthyLogInterval) * time.Second
 	}
+	pinAutoUnfixThreshold := defaultPersistentPinAutoUnfixThreshold
+	if option.PersistentPinAutoUnfixThreshold > 0 {
+		pinAutoUnfixThreshold = option.PersistentPinAutoUnfixThreshold
+	}
 
 	urlTest := &URLTest{
 		GroupBase: NewGroupBase(GroupBaseOption{
@@ -333,14 +421,15 @@ func NewURLTest(option *GroupCommonOption, providers []P.ProxyProvider, options 
 			MaxFailedTimes: option.MaxFailedTimes,
 			Providers:      providers,
 		}),
-		fastSingle:      singledo.NewSingle[C.Proxy](time.Second * 10),
-		disableUDP:      option.DisableUDP,
-		testUrl:         option.URL,
-		expectedStatus:  option.ExpectedStatus,
-		persistentPin:   option.PersistentPin,
-		pinWarnInterval: pinWarnInterval,
-		Hidden:          option.Hidden,
-		Icon:            option.Icon,
+		fastSingle:            singledo.NewSingle[C.Proxy](time.Second * 10),
+		disableUDP:            option.DisableUDP,
+		testUrl:               option.URL,
+		expectedStatus:        option.ExpectedStatus,
+		persistentPin:         option.PersistentPin,
+		pinWarnInterval:       pinWarnInterval,
+		pinAutoUnfixThreshold: pinAutoUnfixThreshold,
+		Hidden:                option.Hidden,
+		Icon:                  option.Icon,
 	}
 
 	for _, option := range options {
