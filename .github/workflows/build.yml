@@ -516,7 +516,8 @@ jobs:
           body_path: release.md
 
   Docker:
-    if: ${{ !startsWith(github.event_name, 'pull_request') }}
+    # Disabled in this fork: docker publish is not needed and causes recurring failures.
+    if: ${{ false }}
     permissions: write-all
     needs: [build]
     runs-on: ubuntu-latest
