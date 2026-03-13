@@ -12,17 +12,23 @@ import (
 	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
+	"github.com/metacubex/mihomo/log"
 )
 
 type Fallback struct {
 	*GroupBase
-	stateMux       sync.RWMutex
-	disableUDP     bool
-	testUrl        string
-	selected       string
-	expectedStatus string
-	Hidden         bool
-	Icon           string
+	stateMux        sync.RWMutex
+	disableUDP      bool
+	testUrl         string
+	selected        string
+	expectedStatus  string
+	persistentPin   bool
+	pinWarnInterval time.Duration
+	lastPinWarnAt   time.Time
+	lastPinWarnFor  string
+	lastPinWarnMsg  string
+	Hidden          bool
+	Icon            string
 }
 
 func (f *Fallback) Now() string {
@@ -86,14 +92,16 @@ func (f *Fallback) MarshalJSON() ([]byte, error) {
 		all = append(all, proxy.Name())
 	}
 	return json.Marshal(map[string]any{
-		"type":           f.Type().String(),
-		"now":            f.Now(),
-		"all":            all,
-		"testUrl":        f.testUrl,
-		"expectedStatus": f.expectedStatus,
-		"fixed":          f.getSelected(),
-		"hidden":         f.Hidden,
-		"icon":           f.Icon,
+		"type":                    f.Type().String(),
+		"now":                     f.Now(),
+		"all":                     all,
+		"testUrl":                 f.testUrl,
+		"expectedStatus":          f.expectedStatus,
+		"fixed":                   f.getSelected(),
+		"persistentPin":           f.persistentPin,
+		"pinUnhealthyLogInterval": int(f.pinWarnInterval / time.Second),
+		"hidden":                  f.Hidden,
+		"icon":                    f.Icon,
 	})
 }
 
@@ -108,15 +116,27 @@ func (f *Fallback) findAliveProxy(touch bool) C.Proxy {
 	selected := f.getSelected()
 
 	if len(selected) != 0 {
+		foundSelected := false
 		for _, proxy := range proxies {
 			if proxy.Name() != selected {
 				continue
+			}
+			foundSelected = true
+			if f.persistentPin {
+				if !proxy.AliveForTestUrl(f.testUrl) {
+					f.warnPersistentPinnedProxy(selected, "unhealthy")
+				}
+				return proxy
 			}
 			if proxy.AliveForTestUrl(f.testUrl) {
 				return proxy
 			}
 			f.clearSelectedIf(selected)
 			break
+		}
+		if f.persistentPin && !foundSelected {
+			f.clearSelectedIf(selected)
+			f.warnPersistentPinnedProxy(selected, "missing")
 		}
 	}
 
@@ -157,6 +177,10 @@ func (f *Fallback) ForceSet(name string) {
 	f.setSelected(name)
 }
 
+func (f *Fallback) PersistentPin() bool {
+	return f.persistentPin
+}
+
 func (f *Fallback) getSelected() string {
 	f.stateMux.RLock()
 	defer f.stateMux.RUnlock()
@@ -178,6 +202,34 @@ func (f *Fallback) clearSelectedIf(selected string) {
 	f.stateMux.Unlock()
 }
 
+func (f *Fallback) warnPersistentPinnedProxy(selected, reason string) {
+	interval := f.pinWarnInterval
+	if interval <= 0 {
+		interval = 10 * time.Second
+	}
+
+	shouldLog := false
+	f.stateMux.Lock()
+	now := time.Now()
+	if f.lastPinWarnFor != selected || f.lastPinWarnMsg != reason || now.Sub(f.lastPinWarnAt) >= interval {
+		f.lastPinWarnFor = selected
+		f.lastPinWarnMsg = reason
+		f.lastPinWarnAt = now
+		shouldLog = true
+	}
+	f.stateMux.Unlock()
+	if !shouldLog {
+		return
+	}
+
+	switch reason {
+	case "missing":
+		log.Warnln("group [%s] cleared persistent pin because proxy [%s] no longer exists in current members", f.Name(), selected)
+	default:
+		log.Warnln("group [%s] keeps persistent pin on unhealthy proxy [%s]; traffic remains pinned until manual unfix", f.Name(), selected)
+	}
+}
+
 func (f *Fallback) Providers() []P.ProxyProvider {
 	return f.providers
 }
@@ -187,6 +239,11 @@ func (f *Fallback) Proxies() []C.Proxy {
 }
 
 func NewFallback(option *GroupCommonOption, providers []P.ProxyProvider) *Fallback {
+	pinWarnInterval := 10 * time.Second
+	if option.PinUnhealthyLogInterval > 0 {
+		pinWarnInterval = time.Duration(option.PinUnhealthyLogInterval) * time.Second
+	}
+
 	return &Fallback{
 		GroupBase: NewGroupBase(GroupBaseOption{
 			Name:           option.Name,
@@ -198,10 +255,12 @@ func NewFallback(option *GroupCommonOption, providers []P.ProxyProvider) *Fallba
 			MaxFailedTimes: option.MaxFailedTimes,
 			Providers:      providers,
 		}),
-		disableUDP:     option.DisableUDP,
-		testUrl:        option.URL,
-		expectedStatus: option.ExpectedStatus,
-		Hidden:         option.Hidden,
-		Icon:           option.Icon,
+		disableUDP:      option.DisableUDP,
+		testUrl:         option.URL,
+		expectedStatus:  option.ExpectedStatus,
+		persistentPin:   option.PersistentPin,
+		pinWarnInterval: pinWarnInterval,
+		Hidden:          option.Hidden,
+		Icon:            option.Icon,
 	}
 }
