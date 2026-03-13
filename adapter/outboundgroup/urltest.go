@@ -13,6 +13,7 @@ import (
 	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
+	"github.com/metacubex/mihomo/log"
 )
 
 type urlTestOption func(*URLTest)
@@ -25,16 +26,21 @@ func urlTestWithTolerance(tolerance uint16) urlTestOption {
 
 type URLTest struct {
 	*GroupBase
-	stateMux       sync.RWMutex
-	selected       string
-	testUrl        string
-	expectedStatus string
-	tolerance      uint16
-	disableUDP     bool
-	Hidden         bool
-	Icon           string
-	fastNode       C.Proxy
-	fastSingle     *singledo.Single[C.Proxy]
+	stateMux        sync.RWMutex
+	selected        string
+	testUrl         string
+	expectedStatus  string
+	tolerance       uint16
+	disableUDP      bool
+	persistentPin   bool
+	pinWarnInterval time.Duration
+	lastPinWarnAt   time.Time
+	lastPinWarnFor  string
+	lastPinWarnMsg  string
+	Hidden          bool
+	Icon            string
+	fastNode        C.Proxy
+	fastSingle      *singledo.Single[C.Proxy]
 }
 
 func (u *URLTest) Now() string {
@@ -57,9 +63,7 @@ func (u *URLTest) Set(name string) error {
 }
 
 func (u *URLTest) ForceSet(name string) {
-	u.stateMux.Lock()
-	u.selected = name
-	u.stateMux.Unlock()
+	u.setSelected(name)
 	u.fastSingle.Reset()
 }
 
@@ -116,14 +120,27 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 		selected, fastNode := u.snapshotState()
 
 		if selected != "" {
+			foundSelected := false
 			for _, proxy := range proxies {
-				if !proxy.AliveForTestUrl(u.testUrl) {
-					continue
-				}
 				if proxy.Name() == selected {
+					foundSelected = true
+					if u.persistentPin {
+						if !proxy.AliveForTestUrl(u.testUrl) {
+							u.warnPersistentPinnedProxy(selected, "unhealthy")
+						}
+						u.setFastNode(proxy)
+						return proxy, nil
+					}
+					if !proxy.AliveForTestUrl(u.testUrl) {
+						continue
+					}
 					u.setFastNode(proxy)
 					return proxy, nil
 				}
+			}
+			if u.persistentPin && !foundSelected {
+				u.clearSelectedIf(selected)
+				u.warnPersistentPinnedProxy(selected, "missing")
 			}
 		}
 
@@ -191,6 +208,52 @@ func (u *URLTest) setFastNode(proxy C.Proxy) {
 	u.stateMux.Unlock()
 }
 
+func (u *URLTest) setSelected(name string) {
+	u.stateMux.Lock()
+	u.selected = name
+	u.stateMux.Unlock()
+}
+
+func (u *URLTest) clearSelectedIf(selected string) {
+	u.stateMux.Lock()
+	if u.selected == selected {
+		u.selected = ""
+	}
+	u.stateMux.Unlock()
+}
+
+func (u *URLTest) PersistentPin() bool {
+	return u.persistentPin
+}
+
+func (u *URLTest) warnPersistentPinnedProxy(selected, reason string) {
+	interval := u.pinWarnInterval
+	if interval <= 0 {
+		interval = 10 * time.Second
+	}
+
+	shouldLog := false
+	u.stateMux.Lock()
+	now := time.Now()
+	if u.lastPinWarnFor != selected || u.lastPinWarnMsg != reason || now.Sub(u.lastPinWarnAt) >= interval {
+		u.lastPinWarnFor = selected
+		u.lastPinWarnMsg = reason
+		u.lastPinWarnAt = now
+		shouldLog = true
+	}
+	u.stateMux.Unlock()
+	if !shouldLog {
+		return
+	}
+
+	switch reason {
+	case "missing":
+		log.Warnln("group [%s] cleared persistent pin because proxy [%s] no longer exists in current members", u.Name(), selected)
+	default:
+		log.Warnln("group [%s] keeps persistent pin on unhealthy proxy [%s]; traffic remains pinned until manual unfix", u.Name(), selected)
+	}
+}
+
 // SupportUDP implements C.ProxyAdapter
 func (u *URLTest) SupportUDP() bool {
 	if u.disableUDP {
@@ -211,14 +274,16 @@ func (u *URLTest) MarshalJSON() ([]byte, error) {
 		all = append(all, proxy.Name())
 	}
 	return json.Marshal(map[string]any{
-		"type":           u.Type().String(),
-		"now":            u.Now(),
-		"all":            all,
-		"testUrl":        u.testUrl,
-		"expectedStatus": u.expectedStatus,
-		"fixed":          u.getSelected(),
-		"hidden":         u.Hidden,
-		"icon":           u.Icon,
+		"type":                    u.Type().String(),
+		"now":                     u.Now(),
+		"all":                     all,
+		"testUrl":                 u.testUrl,
+		"expectedStatus":          u.expectedStatus,
+		"fixed":                   u.getSelected(),
+		"persistentPin":           u.persistentPin,
+		"pinUnhealthyLogInterval": int(u.pinWarnInterval / time.Second),
+		"hidden":                  u.Hidden,
+		"icon":                    u.Icon,
 	})
 }
 
@@ -252,6 +317,11 @@ func parseURLTestOption(config map[string]any) []urlTestOption {
 }
 
 func NewURLTest(option *GroupCommonOption, providers []P.ProxyProvider, options ...urlTestOption) *URLTest {
+	pinWarnInterval := 10 * time.Second
+	if option.PinUnhealthyLogInterval > 0 {
+		pinWarnInterval = time.Duration(option.PinUnhealthyLogInterval) * time.Second
+	}
+
 	urlTest := &URLTest{
 		GroupBase: NewGroupBase(GroupBaseOption{
 			Name:           option.Name,
@@ -263,12 +333,14 @@ func NewURLTest(option *GroupCommonOption, providers []P.ProxyProvider, options 
 			MaxFailedTimes: option.MaxFailedTimes,
 			Providers:      providers,
 		}),
-		fastSingle:     singledo.NewSingle[C.Proxy](time.Second * 10),
-		disableUDP:     option.DisableUDP,
-		testUrl:        option.URL,
-		expectedStatus: option.ExpectedStatus,
-		Hidden:         option.Hidden,
-		Icon:           option.Icon,
+		fastSingle:      singledo.NewSingle[C.Proxy](time.Second * 10),
+		disableUDP:      option.DisableUDP,
+		testUrl:         option.URL,
+		expectedStatus:  option.ExpectedStatus,
+		persistentPin:   option.PersistentPin,
+		pinWarnInterval: pinWarnInterval,
+		Hidden:          option.Hidden,
+		Icon:            option.Icon,
 	}
 
 	for _, option := range options {

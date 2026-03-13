@@ -32,3 +32,7 @@ type SelectAble interface {
 var _ SelectAble = (*Fallback)(nil)
 var _ SelectAble = (*URLTest)(nil)
 var _ SelectAble = (*Selector)(nil)
+
+type PersistentPinAware interface {
+	PersistentPin() bool
+}
