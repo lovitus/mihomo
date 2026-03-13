@@ -515,6 +515,32 @@ jobs:
           files: bin/*
           body_path: release.md
 
+  Upload-Tag-Release:
+    permissions: write-all
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: bin/
+          merge-multiple: true
+
+      - name: Calculate checksums
+        run: |
+          cd bin/
+          find . -type f -not -name "checksums.*" -not -name "version.txt" | sort | xargs sha256sum > checksums.txt
+          cat checksums.txt
+        shell: bash
+
+      - name: Upload Tag Release
+        uses: softprops/action-gh-release@v2
+        if: ${{ success() }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: bin/*
+          generate_release_notes: true
+
   Docker:
     # Disabled in this fork: docker publish is not needed and causes recurring failures.
     if: ${{ false }}
