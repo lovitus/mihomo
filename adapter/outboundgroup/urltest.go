@@ -241,6 +241,11 @@ func (u *URLTest) warnPersistentPinnedProxy(selected, reason string) {
 	}
 
 	shouldLog := false
+	counter := 0
+	threshold := u.pinAutoUnfixThreshold
+	if threshold <= 0 {
+		threshold = defaultPersistentPinAutoUnfixThreshold
+	}
 	u.stateMux.Lock()
 	now := time.Now()
 	if u.lastPinWarnFor != selected || u.lastPinWarnMsg != reason || now.Sub(u.lastPinWarnAt) >= interval {
@@ -249,6 +254,7 @@ func (u *URLTest) warnPersistentPinnedProxy(selected, reason string) {
 		u.lastPinWarnAt = now
 		shouldLog = true
 	}
+	counter = u.pinAutoUnfixCount
 	u.stateMux.Unlock()
 	if !shouldLog {
 		return
@@ -258,7 +264,7 @@ func (u *URLTest) warnPersistentPinnedProxy(selected, reason string) {
 	case "missing":
 		log.Warnln("group [%s] cleared persistent pin because proxy [%s] no longer exists in current members", u.Name(), selected)
 	default:
-		log.Warnln("group [%s] keeps persistent pin on unhealthy proxy [%s]; traffic remains pinned until manual unfix", u.Name(), selected)
+		log.Warnln("group [%s] keeps persistent pin on unhealthy proxy [%s]; traffic remains pinned until manual unfix (auto-unfix counter %d/%d)", u.Name(), selected, counter, threshold)
 	}
 }
 
@@ -299,6 +305,8 @@ func (u *URLTest) observePersistentPinnedResult(selected string, pinned C.Proxy,
 	autoUnfixed := false
 	reachedCount := 0
 	resetByHealthy := false
+	resetReason := ""
+	resetFrom := 0
 
 	u.stateMux.Lock()
 	if u.selected != selected || !lastTestAt.After(u.pinAutoUnfixLastTest) {
@@ -314,9 +322,17 @@ func (u *URLTest) observePersistentPinnedResult(selected string, pinned C.Proxy,
 	}
 	u.pinAutoUnfixLastTest = lastTestAt
 	if resetByHealthy {
+		if u.pinAutoUnfixCount > 0 {
+			resetReason = "pinned proxy has successful test records"
+			resetFrom = u.pinAutoUnfixCount
+		}
 		u.pinAutoUnfixCount = 0
 	}
 	if lastHealthy {
+		if u.pinAutoUnfixCount > 0 {
+			resetReason = "pinned proxy recovered"
+			resetFrom = u.pinAutoUnfixCount
+		}
 		u.pinAutoUnfixCount = 0
 	} else if hasOtherAlive {
 		u.pinAutoUnfixCount++
@@ -327,10 +343,17 @@ func (u *URLTest) observePersistentPinnedResult(selected string, pinned C.Proxy,
 			autoUnfixed = true
 		}
 	} else {
+		if u.pinAutoUnfixCount > 0 {
+			resetReason = "no alternative alive proxies in group"
+			resetFrom = u.pinAutoUnfixCount
+		}
 		u.pinAutoUnfixCount = 0
 	}
 	u.stateMux.Unlock()
 
+	if resetReason != "" {
+		log.Warnln("group [%s] reset persistent pin auto-unfix counter for proxy [%s] from %d to 0 (%s)", u.Name(), selected, resetFrom, resetReason)
+	}
 	if autoUnfixed {
 		log.Warnln("group [%s] auto-unfixed persistent pin on proxy [%s] after %d consecutive unhealthy checks with alternative alive proxies", u.Name(), selected, reachedCount)
 	}
