@@ -196,19 +196,35 @@ func (f *Fallback) getSelected() string {
 }
 
 func (f *Fallback) setSelected(name string) {
+	changed := false
+	previous := ""
+
 	f.stateMux.Lock()
+	previous = f.selected
+	changed = previous != name
 	f.selected = name
 	f.resetPersistentPinStateLocked()
 	f.stateMux.Unlock()
+
+	if changed {
+		log.Infoln("group [%s] fixed selection updated: [%s] -> [%s]", f.Name(), previous, name)
+	}
 }
 
 func (f *Fallback) clearSelectedIf(selected string) {
+	cleared := false
+
 	f.stateMux.Lock()
 	if f.selected == selected {
 		f.selected = ""
 		f.resetPersistentPinStateLocked()
+		cleared = true
 	}
 	f.stateMux.Unlock()
+
+	if cleared {
+		log.Warnln("group [%s] fixed selection cleared: [%s]", f.Name(), selected)
+	}
 }
 
 func (f *Fallback) resetPersistentPinStateLocked() {

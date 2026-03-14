@@ -215,19 +215,35 @@ func (u *URLTest) setFastNode(proxy C.Proxy) {
 }
 
 func (u *URLTest) setSelected(name string) {
+	changed := false
+	previous := ""
+
 	u.stateMux.Lock()
+	previous = u.selected
+	changed = previous != name
 	u.selected = name
 	u.resetPersistentPinStateLocked()
 	u.stateMux.Unlock()
+
+	if changed {
+		log.Infoln("group [%s] fixed selection updated: [%s] -> [%s]", u.Name(), previous, name)
+	}
 }
 
 func (u *URLTest) clearSelectedIf(selected string) {
+	cleared := false
+
 	u.stateMux.Lock()
 	if u.selected == selected {
 		u.selected = ""
 		u.resetPersistentPinStateLocked()
+		cleared = true
 	}
 	u.stateMux.Unlock()
+
+	if cleared {
+		log.Warnln("group [%s] fixed selection cleared: [%s]", u.Name(), selected)
+	}
 }
 
 func (u *URLTest) PersistentPin() bool {
