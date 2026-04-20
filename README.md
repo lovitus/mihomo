@@ -42,6 +42,18 @@ Configuration example is located at [/docs/config.yaml](https://github.com/MetaC
 
 Documentation can be found in [mihomo Docs](https://wiki.metacubex.one/).
 
+## Fork Notes
+
+This fork tracks upstream `MetaCubeX/mihomo` while preserving the fork-specific persistent pin behavior and related release workflow behavior.
+
+Reference documents in this repository:
+
+- [Persistent Pin Upstream Merge Playbook (Human)](/Users/fanli/Documents/mihomo-rev/docs/persistent-pin-upstream-merge-human.md)
+- [Persistent Pin Upstream Merge Playbook (AI)](/Users/fanli/Documents/mihomo-rev/docs/persistent-pin-upstream-merge-ai.md)
+- [Persistent Pin Upstream Merge Checklist](/Users/fanli/Documents/mihomo-rev/docs/persistent-pin-upstream-merge-checklist.md)
+- [Persistent Pin Upstream Merge Report: v1.19.24](/Users/fanli/Documents/mihomo-rev/docs/persistent-pin-upstream-merge-report-v1.19.24.md)
+- [Fork Release Notes: v2026.04.20-persistent-pin.4](/Users/fanli/Documents/mihomo-rev/docs/releases/v2026.04.20-persistent-pin.4.md)
+
 ## For development
 
 Requirements:
