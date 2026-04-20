@@ -52,7 +52,7 @@ Reference documents in this repository:
 - [Persistent Pin Upstream Merge Playbook (AI)](/Users/fanli/Documents/mihomo-rev/docs/persistent-pin-upstream-merge-ai.md)
 - [Persistent Pin Upstream Merge Checklist](/Users/fanli/Documents/mihomo-rev/docs/persistent-pin-upstream-merge-checklist.md)
 - [Persistent Pin Upstream Merge Report: v1.19.24](/Users/fanli/Documents/mihomo-rev/docs/persistent-pin-upstream-merge-report-v1.19.24.md)
-- [Fork Release Notes: v2026.04.20-persistent-pin.4](/Users/fanli/Documents/mihomo-rev/docs/releases/v2026.04.20-persistent-pin.4.md)
+- [Fork Release Notes: v2026.04.20-persistent-pin.5](/Users/fanli/Documents/mihomo-rev/docs/releases/v2026.04.20-persistent-pin.5.md)
 
 ## For development
 
