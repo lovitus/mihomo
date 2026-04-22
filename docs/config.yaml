@@ -95,6 +95,32 @@ external-ui-url: "https://github.com/MetaCubeX/metacubexd/archive/refs/heads/gh-
 # ！！！该URL不会验证secret， 如果开启请自行保证安全问题 ！！！
 external-doh-server: /dns-query
 
+# 内置 tsnet/Tailscale 节点。该功能不接管系统 tailscaled，不依赖 TUN/TAP。
+# 通过 state-dir 持久化同一个 tailnet 节点身份；删除该目录会生成新节点。
+tailscale:
+  enable: false
+  login-server: https://hs.example.com # Headscale/Tailscale control server，enable=true 时必填
+  state-dir: tailscale # 相对路径按 mihomo home dir 解析，目录内容属于敏感身份材料
+  expose-controller: false # 通过 tailnet 暴露普通 external-controller；不支持 tls/unix/pipe
+  mesh: false # 在 tailnet 上暴露标准 SOCKS5 服务
+  socks5: 1666 # tailnet SOCKS5 端口，不监听宿主机 127.0.0.1/0.0.0.0
+
+# tailnet SOCKS5 节点按标准 socks5 写法配置；旧核心最多只是该节点不通。
+# proxies:
+#   - name: tail-socks-home
+#     type: socks5
+#     server: 10.20.0.33 # 推荐使用 Headscale 分配的 tailnet IP
+#     port: 1666
+#     udp: true
+#   - name: ss-through-home-tail
+#     type: ss
+#     server: example.com
+#     port: 443
+#     cipher: chacha20-ietf-poly1305
+#     password: "password"
+#     udp: true
+#     dialer-proxy: tail-socks-home
+
 # interface-name: en0 # 设置出口网卡
 
 #  TCP keep alive interval

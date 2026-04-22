@@ -107,6 +107,19 @@ type User struct {
 
 // ServerHandshake fast-tracks SOCKS initialization to get target address to connect on server side.
 func ServerHandshake(rw net.Conn, authenticator auth.Authenticator) (addr Addr, command Command, user string, err error) {
+	return ServerHandshakeWithReplyAddrPolicy(rw, authenticator, nil, true)
+}
+
+// ServerHandshakeWithReplyAddr is ServerHandshake with an optional BND.ADDR override.
+// The override is primarily used by non-kernel listeners whose TCP LocalAddr is
+// not the UDP relay address clients should use.
+func ServerHandshakeWithReplyAddr(rw net.Conn, authenticator auth.Authenticator, replyAddr Addr) (addr Addr, command Command, user string, err error) {
+	return ServerHandshakeWithReplyAddrPolicy(rw, authenticator, replyAddr, true)
+}
+
+// ServerHandshakeWithReplyAddrPolicy is ServerHandshakeWithReplyAddr with optional
+// control over whether LocalAddr fallback is allowed when replyAddr is nil.
+func ServerHandshakeWithReplyAddrPolicy(rw net.Conn, authenticator auth.Authenticator, replyAddr Addr, allowLocalAddrFallback bool) (addr Addr, command Command, user string, err error) {
 	// Read RFC 1928 for request and reply structure and sizes.
 	buf := make([]byte, MaxAddrLen)
 	// read VER, NMETHODS, METHODS
@@ -191,9 +204,24 @@ func ServerHandshake(rw net.Conn, authenticator auth.Authenticator) (addr Addr, 
 	}
 
 	switch command {
-	case CmdConnect, CmdUDPAssociate:
-		// Acquire server listened address info
-		localAddr := ParseAddrToSocksAddr(rw.LocalAddr())
+	case CmdConnect:
+		// CONNECT keeps historical behavior: always allow LocalAddr fallback.
+		localAddr := replyAddr
+		if localAddr == nil {
+			localAddr = ParseAddrToSocksAddr(rw.LocalAddr())
+		}
+		if localAddr == nil {
+			err = ErrAddressNotSupported
+		} else {
+			// write VER REP RSV ATYP BND.ADDR BND.PORT
+			_, err = rw.Write(bytes.Join([][]byte{{5, 0, 0}, localAddr}, []byte{}))
+		}
+	case CmdUDPAssociate:
+		// UDP ASSOCIATE can optionally disable LocalAddr fallback.
+		localAddr := replyAddr
+		if localAddr == nil && allowLocalAddrFallback {
+			localAddr = ParseAddrToSocksAddr(rw.LocalAddr())
+		}
 		if localAddr == nil {
 			err = ErrAddressNotSupported
 		} else {

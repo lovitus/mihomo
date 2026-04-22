@@ -11,7 +11,9 @@ import (
 
 	N "github.com/metacubex/mihomo/common/net"
 	"github.com/metacubex/mihomo/component/ca"
+	"github.com/metacubex/mihomo/component/tsnet"
 	C "github.com/metacubex/mihomo/constant"
+	"github.com/metacubex/mihomo/log"
 	"github.com/metacubex/mihomo/transport/socks5"
 
 	"github.com/metacubex/tls"
@@ -68,7 +70,7 @@ func (ss *Socks5) StreamConnContext(ctx context.Context, c net.Conn, metadata *C
 
 // DialContext implements C.ProxyAdapter
 func (ss *Socks5) DialContext(ctx context.Context, metadata *C.Metadata) (_ C.Conn, err error) {
-	c, err := ss.dialer.DialContext(ctx, "tcp", ss.addr)
+	c, _, err := ss.dialSocksServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("%s connect error: %w", ss.addr, err)
 	}
@@ -90,7 +92,15 @@ func (ss *Socks5) ListenPacketContext(ctx context.Context, metadata *C.Metadata)
 	if err = ss.ResolveUDP(ctx, metadata); err != nil {
 		return nil, err
 	}
-	c, err := ss.dialer.DialContext(ctx, "tcp", ss.addr)
+	pc, err := ss.listenPacketContext(ctx, metadata, true)
+	if err == nil {
+		return pc, nil
+	}
+	return nil, err
+}
+
+func (ss *Socks5) listenPacketContext(ctx context.Context, metadata *C.Metadata, allowTsnet bool) (_ C.PacketConn, err error) {
+	c, usedTsnet, err := ss.dialSocksServerWithOption(ctx, allowTsnet)
 	if err != nil {
 		err = fmt.Errorf("%s connect error: %w", ss.addr, err)
 		return
@@ -100,6 +110,10 @@ func (ss *Socks5) ListenPacketContext(ctx context.Context, metadata *C.Metadata)
 		cc := tls.Client(c, ss.tlsConfig)
 		err = cc.HandshakeContext(ctx)
 		c = cc
+		if err != nil && usedTsnet {
+			_ = c.Close()
+			return ss.listenPacketContext(ctx, metadata, false)
+		}
 	}
 
 	defer func(c net.Conn) {
@@ -118,6 +132,10 @@ func (ss *Socks5) ListenPacketContext(ctx context.Context, metadata *C.Metadata)
 	bindAddr, err := ss.clientHandshakeContext(ctx, c, udpAssocateAddr, socks5.CmdUDPAssociate, user)
 	if err != nil {
 		err = fmt.Errorf("client hanshake error: %w", err)
+		if usedTsnet {
+			_ = c.Close()
+			return ss.listenPacketContext(ctx, metadata, false)
+		}
 		return
 	}
 
@@ -125,18 +143,35 @@ func (ss *Socks5) ListenPacketContext(ctx context.Context, metadata *C.Metadata)
 	bindUDPAddr := bindAddr.UDPAddr()
 	if bindUDPAddr == nil {
 		err = errors.New("invalid UDP bind address")
+		if usedTsnet {
+			_ = c.Close()
+			return ss.listenPacketContext(ctx, metadata, false)
+		}
 		return
 	} else if bindUDPAddr.IP.IsUnspecified() {
 		serverAddr, err := resolveUDPAddr(ctx, "udp", ss.Addr(), C.IPv4Prefer)
 		if err != nil {
+			if usedTsnet {
+				_ = c.Close()
+				return ss.listenPacketContext(ctx, metadata, false)
+			}
 			return nil, err
 		}
 
 		bindUDPAddr.IP = serverAddr.IP
 	}
 
-	pc, err := ss.dialer.ListenPacket(ctx, "udp", "", bindUDPAddr.AddrPort())
+	dialer := ss.dialer
+	if usedTsnet {
+		snap := tsnet.CurrentSnapshot()
+		dialer = &snap
+	}
+	pc, err := dialer.ListenPacket(ctx, "udp", "", bindUDPAddr.AddrPort())
 	if err != nil {
+		if usedTsnet {
+			_ = c.Close()
+			return ss.listenPacketContext(ctx, metadata, false)
+		}
 		return
 	}
 
@@ -149,6 +184,28 @@ func (ss *Socks5) ListenPacketContext(ctx context.Context, metadata *C.Metadata)
 	}()
 
 	return newPacketConn(&socksPacketConn{PacketConn: pc, rAddr: bindUDPAddr, tcpConn: c}, ss), nil
+}
+
+func (ss *Socks5) dialSocksServer(ctx context.Context) (net.Conn, bool, error) {
+	return ss.dialSocksServerWithOption(ctx, true)
+}
+
+func (ss *Socks5) dialSocksServerWithOption(ctx context.Context, allowTsnet bool) (net.Conn, bool, error) {
+	if allowTsnet {
+		tsnet.NotifyUse()
+		snap := tsnet.CurrentSnapshot()
+		if snap.Ready && ss.option.Port == snap.Socks5Port {
+			// Intentional: any SOCKS5 node using the configured tailnet SOCKS5
+			// port first tries tsnet, then falls back to the original dialer.
+			c, err := snap.DialContext(ctx, "tcp", ss.addr)
+			if err == nil {
+				return c, true, nil
+			}
+			log.Debugln("[Tailscale] tsnet dial failed for socks5 server %s: %v; fallback to default dialer", ss.addr, err)
+		}
+	}
+	c, err := ss.dialer.DialContext(ctx, "tcp", ss.addr)
+	return c, false, err
 }
 
 // ProxyInfo implements C.ProxyAdapter

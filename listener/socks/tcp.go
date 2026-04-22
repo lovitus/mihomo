@@ -2,11 +2,9 @@ package socks
 
 import (
 	"errors"
-	"io"
 	"net"
 
 	"github.com/metacubex/mihomo/adapter/inbound"
-	N "github.com/metacubex/mihomo/common/net"
 	"github.com/metacubex/mihomo/component/auth"
 	"github.com/metacubex/mihomo/component/ca"
 	"github.com/metacubex/mihomo/component/ech"
@@ -14,8 +12,8 @@ import (
 	authStore "github.com/metacubex/mihomo/listener/auth"
 	LC "github.com/metacubex/mihomo/listener/config"
 	"github.com/metacubex/mihomo/listener/reality"
+	"github.com/metacubex/mihomo/listener/sockscommon"
 	"github.com/metacubex/mihomo/ntp"
-	"github.com/metacubex/mihomo/transport/socks4"
 	"github.com/metacubex/mihomo/transport/socks5"
 
 	"github.com/metacubex/tls"
@@ -26,6 +24,8 @@ type Listener struct {
 	addr     string
 	closed   bool
 }
+
+type ServeOption = sockscommon.ServeOption
 
 // RawAddress implements C.Listener
 func (l *Listener) RawAddress() string {
@@ -136,54 +136,25 @@ func NewWithConfig(config LC.AuthServer, tunnel C.Tunnel, additions ...inbound.A
 					store = authStore.Nil
 				}
 			}
-			go handleSocks(c, tunnel, store, additions...)
+			go ServeConn(c, tunnel, ServeOption{AuthStore: store, Additions: additions})
 		}
 	}()
 
 	return sl, nil
 }
 
-func handleSocks(conn net.Conn, tunnel C.Tunnel, store auth.AuthStore, additions ...inbound.Addition) {
-	bufConn := N.NewBufferedConn(conn)
-	head, err := bufConn.Peek(1)
-	if err != nil {
-		conn.Close()
-		return
-	}
-
-	switch head[0] {
-	case socks4.Version:
-		HandleSocks4(bufConn, tunnel, store, additions...)
-	case socks5.Version:
-		HandleSocks5(bufConn, tunnel, store, additions...)
-	default:
-		conn.Close()
-	}
+func ServeConn(conn net.Conn, tunnel C.Tunnel, option ServeOption) {
+	sockscommon.ServeConn(conn, tunnel, option)
 }
 
 func HandleSocks4(conn net.Conn, tunnel C.Tunnel, store auth.AuthStore, additions ...inbound.Addition) {
-	authenticator := store.Authenticator()
-	addr, _, user, err := socks4.ServerHandshake(conn, authenticator)
-	if err != nil {
-		conn.Close()
-		return
-	}
-	additions = append(additions, inbound.WithInUser(user))
-	tunnel.HandleTCPConn(inbound.NewSocket(socks5.ParseAddr(addr), conn, C.SOCKS4, additions...))
+	sockscommon.HandleSocks4(conn, tunnel, store, additions...)
 }
 
 func HandleSocks5(conn net.Conn, tunnel C.Tunnel, store auth.AuthStore, additions ...inbound.Addition) {
-	authenticator := store.Authenticator()
-	target, command, user, err := socks5.ServerHandshake(conn, authenticator)
-	if err != nil {
-		conn.Close()
-		return
-	}
-	if command == socks5.CmdUDPAssociate {
-		defer conn.Close()
-		io.Copy(io.Discard, conn)
-		return
-	}
-	additions = append(additions, inbound.WithInUser(user))
-	tunnel.HandleTCPConn(inbound.NewSocket(target, conn, C.SOCKS5, additions...))
+	sockscommon.HandleSocks5(conn, tunnel, store, additions...)
+}
+
+func HandleSocks5WithBindAddr(conn net.Conn, tunnel C.Tunnel, store auth.AuthStore, udpBindAddr socks5.Addr, additions ...inbound.Addition) {
+	sockscommon.HandleSocks5WithBindAddr(conn, tunnel, store, udpBindAddr, additions...)
 }

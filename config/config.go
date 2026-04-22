@@ -191,6 +191,7 @@ type TLS struct {
 type Config struct {
 	General       *General
 	Controller    *Controller
+	Tailscale     *Tailscale
 	Experimental  *Experimental
 	IPTables      *IPTables
 	NTP           *NTP
@@ -262,6 +263,24 @@ type RawNTP struct {
 	Interval      int    `yaml:"interval" json:"interval"`
 	DialerProxy   string `yaml:"dialer-proxy" json:"dialer-proxy"`
 	WriteToSystem bool   `yaml:"write-to-system" json:"write-to-system"`
+}
+
+type Tailscale struct {
+	Enable           bool
+	LoginServer      string
+	StateDir         string
+	ExposeController bool
+	Mesh             bool
+	Socks5           int
+}
+
+type RawTailscale struct {
+	Enable           bool   `yaml:"enable" json:"enable"`
+	LoginServer      string `yaml:"login-server" json:"login-server"`
+	StateDir         string `yaml:"state-dir" json:"state-dir"`
+	ExposeController bool   `yaml:"expose-controller" json:"expose-controller"`
+	Mesh             bool   `yaml:"mesh" json:"mesh"`
+	Socks5           int    `yaml:"socks5" json:"socks5"`
 }
 
 type RawTun struct {
@@ -445,6 +464,7 @@ type RawConfig struct {
 	Listeners     []map[string]any          `yaml:"listeners" json:"listeners"`
 	Hosts         map[string]any            `yaml:"hosts" json:"hosts"`
 	DNS           RawDNS                    `yaml:"dns" json:"dns"`
+	Tailscale     RawTailscale              `yaml:"tailscale" json:"tailscale"`
 	NTP           RawNTP                    `yaml:"ntp" json:"ntp"`
 	Tun           RawTun                    `yaml:"tun" json:"tun"`
 	TuicServer    RawTuicServer             `yaml:"tuic-server" json:"tuic-server"`
@@ -528,6 +548,13 @@ func DefaultRawConfig() *RawConfig {
 			Server:        "time.apple.com",
 			Port:          123,
 			Interval:      30,
+		},
+		Tailscale: RawTailscale{
+			Enable:           false,
+			StateDir:         "tailscale",
+			ExposeController: false,
+			Mesh:             false,
+			Socks5:           1666,
 		},
 		Tun: RawTun{
 			Enable:              false,
@@ -624,6 +651,12 @@ func ParseRawConfig(rawCfg *RawConfig) (*Config, error) {
 		return nil, err
 	}
 	config.Controller = controller
+
+	tailscaleCfg, err := parseTailscale(rawCfg)
+	if err != nil {
+		return nil, err
+	}
+	config.Tailscale = tailscaleCfg
 
 	experimental, err := parseExperimental(rawCfg)
 	if err != nil {
@@ -805,6 +838,40 @@ func parseController(cfg *RawConfig) (*Controller, error) {
 			AllowOrigins:        cfg.ExternalControllerCors.AllowOrigins,
 			AllowPrivateNetwork: cfg.ExternalControllerCors.AllowPrivateNetwork,
 		},
+	}, nil
+}
+
+func parseTailscale(cfg *RawConfig) (*Tailscale, error) {
+	ts := cfg.Tailscale
+	if !ts.Enable {
+		return &Tailscale{
+			Enable:           false,
+			LoginServer:      ts.LoginServer,
+			StateDir:         ts.StateDir,
+			ExposeController: ts.ExposeController,
+			Mesh:             ts.Mesh,
+			Socks5:           ts.Socks5,
+		}, nil
+	}
+	if strings.TrimSpace(ts.LoginServer) == "" {
+		return nil, errors.New("tailscale.login-server is required when tailscale.enable=true")
+	}
+	if strings.TrimSpace(ts.StateDir) == "" {
+		return nil, errors.New("tailscale.state-dir is required when tailscale.enable=true")
+	}
+	if ts.Socks5 < 1 || ts.Socks5 > 65535 {
+		return nil, fmt.Errorf("tailscale.socks5 must be in range 1..65535: %d", ts.Socks5)
+	}
+	if !C.Path.IsSafePath(ts.StateDir) {
+		return nil, C.Path.ErrNotSafePath(ts.StateDir)
+	}
+	return &Tailscale{
+		Enable:           ts.Enable,
+		LoginServer:      ts.LoginServer,
+		StateDir:         ts.StateDir,
+		ExposeController: ts.ExposeController,
+		Mesh:             ts.Mesh,
+		Socks5:           ts.Socks5,
 	}, nil
 }
 
