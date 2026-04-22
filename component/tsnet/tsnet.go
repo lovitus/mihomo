@@ -24,8 +24,10 @@ import (
 	"github.com/metacubex/mihomo/log"
 	"github.com/metacubex/mihomo/transport/socks5"
 
+	"tailscale.com/envknob"
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
+	"tailscale.com/logtail"
 	tsnetlib "tailscale.com/tsnet"
 )
 
@@ -98,6 +100,7 @@ func (d *Dialer) ListenPacket(ctx context.Context, network, address string, rAdd
 }
 
 var current atomic.Value // stores *runtime
+var disableTailscaleLogUploadsOnce sync.Once
 
 func init() {
 	current.Store((*runtime)(nil))
@@ -146,6 +149,8 @@ func ApplyConfig(cfg Config) {
 		return
 	}
 
+	disableTailscaleBackgroundLogUploads()
+
 	server := &tsnetlib.Server{
 		Dir:        stateDir,
 		Hostname:   nodeName,
@@ -168,6 +173,17 @@ func ApplyConfig(cfg Config) {
 	}
 	current.Store(rt)
 	go rt.run()
+}
+
+func disableTailscaleBackgroundLogUploads() {
+	disableTailscaleLogUploadsOnce.Do(func() {
+		// mihomo intentionally crashes on net.DefaultResolver usage.
+		// tsnet v1.68.2 initializes logtail on startup and otherwise tries to
+		// resolve log.tailscale.com through the stdlib resolver path.
+		logtail.Disable()
+		envknob.SetNoLogsNoSupport()
+		log.Infoln("[Tailscale] disabled upstream logtail uploads for mihomo resolver compatibility")
+	})
 }
 
 func Stop() {
