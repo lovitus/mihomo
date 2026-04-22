@@ -17,6 +17,7 @@ import (
 	"github.com/metacubex/mihomo/common/cmd"
 	"github.com/metacubex/mihomo/component/generator"
 	"github.com/metacubex/mihomo/component/geodata"
+	"github.com/metacubex/mihomo/component/tsnet"
 	"github.com/metacubex/mihomo/component/updater"
 	"github.com/metacubex/mihomo/config"
 	C "github.com/metacubex/mihomo/constant"
@@ -202,6 +203,7 @@ func main() {
 		}
 	}
 
+	defer tsnet.Stop()
 	defer executor.Shutdown()
 
 	termSign := make(chan os.Signal, 1)

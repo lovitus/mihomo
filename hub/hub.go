@@ -1,10 +1,13 @@
 package hub
 
 import (
+	"github.com/metacubex/http"
+	"github.com/metacubex/mihomo/component/tsnet"
 	"github.com/metacubex/mihomo/config"
 	"github.com/metacubex/mihomo/hub/executor"
 	"github.com/metacubex/mihomo/hub/route"
 	"github.com/metacubex/mihomo/log"
+	"github.com/metacubex/mihomo/tunnel"
 )
 
 type Option func(*config.Config)
@@ -43,6 +46,17 @@ func WithSecret(secret string) Option {
 func ApplyConfig(cfg *config.Config) {
 	applyRoute(cfg)
 	executor.ApplyConfig(cfg, true)
+	tsnet.ApplyConfig(tsnet.Config{
+		Enable:            cfg.Tailscale.Enable,
+		LoginServer:       cfg.Tailscale.LoginServer,
+		StateDir:          cfg.Tailscale.StateDir,
+		ExposeController:  cfg.Tailscale.ExposeController,
+		Mesh:              cfg.Tailscale.Mesh,
+		Socks5:            cfg.Tailscale.Socks5,
+		ControllerAddress: cfg.Controller.ExternalController,
+		ControllerHandler: newRouteHandler(cfg),
+		Tunnel:            tunnel.Tunnel,
+	})
 }
 
 func applyRoute(cfg *config.Config) {
@@ -67,6 +81,18 @@ func applyRoute(cfg *config.Config) {
 			AllowPrivateNetwork: cfg.Controller.Cors.AllowPrivateNetwork,
 		},
 	})
+}
+
+func newRouteHandler(cfg *config.Config) http.Handler {
+	return route.NewHandler(
+		cfg.General.LogLevel == log.DEBUG,
+		cfg.Controller.Secret,
+		cfg.Controller.ExternalDohServer,
+		route.Cors{
+			AllowOrigins:        cfg.Controller.Cors.AllowOrigins,
+			AllowPrivateNetwork: cfg.Controller.Cors.AllowPrivateNetwork,
+		},
+	)
 }
 
 // Parse call at the beginning of mihomo

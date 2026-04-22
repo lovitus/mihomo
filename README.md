@@ -53,11 +53,13 @@ Reference documents in this repository:
 - [Persistent Pin Upstream Merge Checklist](/Users/fanli/Documents/mihomo-rev/docs/persistent-pin-upstream-merge-checklist.md)
 - [Persistent Pin Upstream Merge Report: v1.19.24](/Users/fanli/Documents/mihomo-rev/docs/persistent-pin-upstream-merge-report-v1.19.24.md)
 - [Fork Release Notes: v2026.04.20-persistent-pin.5](/Users/fanli/Documents/mihomo-rev/docs/releases/v2026.04.20-persistent-pin.5.md)
+- [Built-in tsnet / Tailscale Integration](/Users/fanli/Documents/mihomo-rev/docs/tailscale-tsnet.md)
+- [Fork Release Notes: v2026.04.22-persistent-pin.6-tsnet](/Users/fanli/Documents/mihomo-rev/docs/releases/v2026.04.22-persistent-pin.6-tsnet.md)
 
 ## For development
 
 Requirements:
-[Go 1.20 or newer](https://go.dev/dl/)
+[Go 1.22 or newer](https://go.dev/dl/)
 
 Build mihomo:
 

@@ -100,6 +100,10 @@ func SetUIPath(path string) {
 	uiPath = C.Path.Resolve(path)
 }
 
+func NewHandler(isDebug bool, secret string, dohServer string, cors Cors) http.Handler {
+	return router(isDebug, secret, dohServer, cors)
+}
+
 func router(isDebug bool, secret string, dohServer string, cors Cors) *chi.Mux {
 	r := chi.NewRouter()
 	cors.Apply(r)
@@ -174,7 +178,7 @@ func start(cfg *Config) {
 		log.Infoln("RESTful API listening at: %s", l.Addr().String())
 
 		server := &http.Server{
-			Handler: router(cfg.IsDebug, cfg.Secret, cfg.DohServer, cfg.Cors),
+			Handler: NewHandler(cfg.IsDebug, cfg.Secret, cfg.DohServer, cfg.Cors),
 		}
 		httpServer = server
 		if err = server.Serve(l); err != nil {
@@ -233,7 +237,7 @@ func startTLS(cfg *Config) {
 			}
 		}
 		server := &http.Server{
-			Handler: router(cfg.IsDebug, cfg.Secret, cfg.DohServer, cfg.Cors),
+			Handler: NewHandler(cfg.IsDebug, cfg.Secret, cfg.DohServer, cfg.Cors),
 		}
 		tlsServer = server
 		if err = server.Serve(tls.NewListener(l, tlsConfig)); err != nil {
@@ -279,7 +283,7 @@ func startUnix(cfg *Config) {
 		log.Infoln("RESTful API unix listening at: %s", l.Addr().String())
 
 		server := &http.Server{
-			Handler: router(cfg.IsDebug, "", cfg.DohServer, cfg.Cors),
+			Handler: NewHandler(cfg.IsDebug, "", cfg.DohServer, cfg.Cors),
 		}
 		unixServer = server
 		if err = server.Serve(l); err != nil {
@@ -310,7 +314,7 @@ func startPipe(cfg *Config) {
 		log.Infoln("RESTful API pipe listening at: %s", l.Addr().String())
 
 		server := &http.Server{
-			Handler: router(cfg.IsDebug, "", cfg.DohServer, cfg.Cors),
+			Handler: NewHandler(cfg.IsDebug, "", cfg.DohServer, cfg.Cors),
 		}
 		pipeServer = server
 		if err = server.Serve(l); err != nil {
