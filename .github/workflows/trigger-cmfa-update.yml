@@ -15,17 +15,27 @@ jobs:
   # Send "core-updated" to MetaCubeX/ClashMetaForAndroid to trigger update-dependencies
   trigger-CMFA-update:
     runs-on: ubuntu-latest
+    env:
+      MAINTAINER_APPID: ${{ secrets.MAINTAINER_APPID }}
+      MAINTAINER_APP_PRIVATE_KEY: ${{ secrets.MAINTAINER_APP_PRIVATE_KEY }}
     steps:
       - uses: actions/create-github-app-token@v3
+        if: env.MAINTAINER_APPID != '' && env.MAINTAINER_APP_PRIVATE_KEY != ''
         id: generate-token
         with:
-          client-id: ${{ secrets.MAINTAINER_APPID }}
-          private-key: ${{ secrets.MAINTAINER_APP_PRIVATE_KEY }}
+          client-id: ${{ env.MAINTAINER_APPID }}
+          private-key: ${{ env.MAINTAINER_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
       
       - name: Trigger update-dependencies
+        if: steps.generate-token.outputs.token != ''
         run: |
           curl -X POST https://api.github.com/repos/MetaCubeX/ClashMetaForAndroid/dispatches \
             -H "Accept: application/vnd.github.everest-preview+json" \
             -H "Authorization: token ${{ steps.generate-token.outputs.token }}" \
             -d '{"event_type": "core-updated"}'
+
+      - name: Skip CMFA update
+        if: env.MAINTAINER_APPID == '' || env.MAINTAINER_APP_PRIVATE_KEY == ''
+        run: |
+          echo "::notice::Skip CMFA update because MAINTAINER_APPID or MAINTAINER_APP_PRIVATE_KEY is not configured."

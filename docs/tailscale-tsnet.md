@@ -309,6 +309,7 @@ CI expectations:
 - GitHub Actions build matrix on `v*` tag push
 - GitHub Actions tag release upload through `Upload-Tag-Release`
 - Docker job remains disabled in this fork
+- CMFA downstream update skips cleanly when maintainer app secrets are not configured
 
 Release workflow:
 
