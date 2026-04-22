@@ -1,6 +1,7 @@
 package tsnet
 
 import (
+	"os"
 	"testing"
 	"time"
 )
@@ -42,5 +43,14 @@ func TestTailnetSocksLimitLogInterval(t *testing.T) {
 	}
 	if !rt.shouldLogTailnetSocksLimit(now.Add(tailnetSocksLimitLogInterval)) {
 		t.Fatal("limit log should be allowed at interval boundary")
+	}
+}
+
+func TestDisableTailscaleBackgroundLogUploadsSetsNoLogsKnob(t *testing.T) {
+	t.Setenv("TS_NO_LOGS_NO_SUPPORT", "")
+	disableTailscaleBackgroundLogUploads()
+
+	if got := os.Getenv("TS_NO_LOGS_NO_SUPPORT"); got != "true" {
+		t.Fatalf("TS_NO_LOGS_NO_SUPPORT mismatch: got %q, want %q", got, "true")
 	}
 }
