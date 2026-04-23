@@ -68,9 +68,8 @@ func main() {
 	// Defensive programming: panic when code mistakenly calls net.DefaultResolver
 	net.DefaultResolver.PreferGo = true
 	net.DefaultResolver.Dial = func(ctx context.Context, network, address string) (net.Conn, error) {
-		if tsnet.DefaultResolverDialAllowed() {
-			var d net.Dialer
-			return d.DialContext(ctx, network, address)
+		if tsnet.DefaultResolverFailClosed() {
+			return nil, fmt.Errorf("net.DefaultResolver disabled while tailscale lifecycle is active: network=%s address=%s", network, address)
 		}
 		buf := make([]byte, 1024)
 		for {
