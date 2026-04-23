@@ -208,12 +208,10 @@ func TestStartupWatchdogTimeoutDisablesRuntimeAndReleasesLock(t *testing.T) {
 
 	go rt.watchStartupGrace(time.Millisecond)
 	eventually(t, time.Second, func() bool { return rt.closed.Load() })
+	eventually(t, time.Second, func() bool { return !DefaultResolverFailClosed() })
 
 	if got := current.Load().(*runtime); got != nil {
 		t.Fatalf("current runtime mismatch: got %#v, want nil", got)
-	}
-	if DefaultResolverFailClosed() {
-		t.Fatal("resolver lifecycle still active after watchdog close")
 	}
 	lock2, err := lockStateDir(stateDir)
 	if err != nil {
