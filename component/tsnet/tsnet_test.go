@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -84,6 +85,40 @@ func TestDefaultResolverLifecycleFailClosed(t *testing.T) {
 func TestFormatStartupGraceUsesSeconds(t *testing.T) {
 	if got := formatStartupGrace(60 * time.Second); got != "60s" {
 		t.Fatalf("startup grace format mismatch: got %q, want %q", got, "60s")
+	}
+}
+
+func TestAuthURLFromTsnetUserLog(t *testing.T) {
+	const authURL = "http://headscale.example/register/nodekey:abc"
+	msg := "To start this tsnet server, restart with TS_AUTHKEY set, or go to: " + authURL
+
+	got, ok := authURLFromTsnetUserLog(msg)
+	if !ok {
+		t.Fatal("auth URL was not extracted")
+	}
+	if got != authURL {
+		t.Fatalf("auth URL mismatch: got %q, want %q", got, authURL)
+	}
+
+	if _, ok := authURLFromTsnetUserLog("unrelated log"); ok {
+		t.Fatal("unrelated log was parsed as auth URL")
+	}
+}
+
+func TestMarkAuthURLLogSeenDeduplicates(t *testing.T) {
+	tailscaleAuthURLLogSeen = sync.Map{}
+	t.Cleanup(func() {
+		tailscaleAuthURLLogSeen = sync.Map{}
+	})
+
+	if !markAuthURLLogSeen("http://headscale.example/register/nodekey:abc") {
+		t.Fatal("first auth URL should be logged")
+	}
+	if markAuthURLLogSeen("http://headscale.example/register/nodekey:abc") {
+		t.Fatal("duplicate auth URL should be suppressed")
+	}
+	if !markAuthURLLogSeen("http://headscale.example/register/nodekey:def") {
+		t.Fatal("different auth URL should be logged")
 	}
 }
 
