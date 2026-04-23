@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -44,6 +45,7 @@ const (
 
 const (
 	meshRetryBaseInterval        = 10 * time.Second
+	startupGracePeriod           = 60 * time.Second
 	tailnetSocksHandshakeTimeout = 10 * time.Second
 	tailnetSocksMaxActiveConns   = 1024
 	tailnetSocksLimitLogInterval = 30 * time.Second
@@ -101,7 +103,7 @@ func (d *Dialer) ListenPacket(ctx context.Context, network, address string, rAdd
 
 var current atomic.Value // stores *runtime
 var disableTailscaleLogUploadsOnce sync.Once
-var defaultResolverCompatibilityMode atomic.Bool
+var defaultResolverLifecycle atomic.Int32
 
 func init() {
 	current.Store((*runtime)(nil))
@@ -115,8 +117,8 @@ func CurrentSnapshot() Snapshot {
 	return rt.snapshot()
 }
 
-func DefaultResolverDialAllowed() bool {
-	return defaultResolverCompatibilityMode.Load()
+func DefaultResolverFailClosed() bool {
+	return defaultResolverLifecycle.Load() > 0
 }
 
 // NotifyUse marks a runtime usage event.
@@ -155,7 +157,7 @@ func ApplyConfig(cfg Config) {
 	}
 
 	disableTailscaleBackgroundLogUploads()
-	enableDefaultResolverCompatibilityMode()
+	logLoginServerNameResolution(cfg.LoginServer)
 
 	server := &tsnetlib.Server{
 		Dir:        stateDir,
@@ -164,21 +166,25 @@ func ApplyConfig(cfg Config) {
 		Port:       0,
 		UserLogf:   userLogf,
 	}
+	endResolverLifecycle := beginDefaultResolverLifecycle()
 	rt := &runtime{
-		server:       server,
-		lock:         lock,
-		cfg:          cfg,
-		stateDir:     stateDir,
-		nodeName:     nodeName,
-		state:        StateRegistering,
-		cancelCtx:    make(chan struct{}),
-		runDone:      make(chan struct{}),
-		socks5Port:   cfg.Socks5,
-		tcpListeners: nil,
-		udpConns:     nil,
+		server:               server,
+		lock:                 lock,
+		cfg:                  cfg,
+		stateDir:             stateDir,
+		nodeName:             nodeName,
+		state:                StateRegistering,
+		cancelCtx:            make(chan struct{}),
+		runDone:              make(chan struct{}),
+		connectedCh:          make(chan struct{}),
+		endResolverLifecycle: endResolverLifecycle,
+		socks5Port:           cfg.Socks5,
+		tcpListeners:         nil,
+		udpConns:             nil,
 	}
 	current.Store(rt)
 	go rt.run()
+	go rt.watchStartupGrace(startupGracePeriod)
 }
 
 func disableTailscaleBackgroundLogUploads() {
@@ -192,10 +198,26 @@ func disableTailscaleBackgroundLogUploads() {
 	})
 }
 
-func enableDefaultResolverCompatibilityMode() {
-	if defaultResolverCompatibilityMode.CompareAndSwap(false, true) {
-		log.Infoln("[Tailscale] enabled stdlib resolver compatibility for background DERP/netcheck lookups")
+func beginDefaultResolverLifecycle() func() {
+	defaultResolverLifecycle.Add(1)
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			defaultResolverLifecycle.Add(-1)
+		})
 	}
+}
+
+func logLoginServerNameResolution(loginServer string) {
+	u, err := url.Parse(loginServer)
+	if err != nil {
+		return
+	}
+	host := u.Hostname()
+	if host == "" || net.ParseIP(host) != nil {
+		return
+	}
+	log.Infoln("[Tailscale] login-server hostname %s resolution is handled by Tailscale internals; startup grace is %s", host, formatStartupGrace(startupGracePeriod))
 }
 
 func Stop() {
@@ -220,16 +242,23 @@ type runtime struct {
 
 	socks5Port int
 
-	cancelOnce sync.Once
-	cancelCtx  chan struct{}
-	runDone    chan struct{}
-	closeOnce  sync.Once
-	started    atomic.Bool
+	cancelOnce            sync.Once
+	cancelCtx             chan struct{}
+	runDone               chan struct{}
+	connectedCh           chan struct{}
+	closeOnce             sync.Once
+	started               atomic.Bool
+	connected             atomic.Bool
+	connectedOnce         sync.Once
+	connectedServicesOnce sync.Once
 
 	tcpListeners []net.Listener
 	udpConns     []net.PacketConn
 	httpServers  []*http.Server
 	closed       atomic.Bool
+
+	transitionMu         sync.Mutex
+	endResolverLifecycle func()
 
 	meshMu          sync.Mutex
 	meshTCPReady    bool
@@ -296,19 +325,12 @@ func (r *runtime) run() {
 		return
 	}
 
-	r.mu.Lock()
-	r.state = StateConnected
-	r.authURL = status.AuthURL
-	r.tailIPs = append([]netip.Addr(nil), status.TailscaleIPs...)
-	r.mu.Unlock()
+	if !r.markConnected(status) {
+		return
+	}
 
 	log.Infoln("[Tailscale] status=connected login-server=%s node-name=%s tail-ip=%s", r.cfg.LoginServer, r.nodeName, formatTailIPs(status.TailscaleIPs))
-	if r.cfg.Mesh {
-		r.startSocks5(status.TailscaleIPs)
-	}
-	if r.cfg.ExposeController {
-		r.startController()
-	}
+	r.startConnectedServices(status.TailscaleIPs)
 }
 
 func (r *runtime) waitForRunning(ctx context.Context) (*ipnstate.Status, error) {
@@ -329,7 +351,8 @@ func (r *runtime) waitForRunning(ctx context.Context) (*ipnstate.Status, error) 
 			return nil, fmt.Errorf("watch state: %w", err)
 		}
 		if n.ErrMessage != nil {
-			return nil, fmt.Errorf("backend: %s", *n.ErrMessage)
+			r.setPendingState(StateRegistering, *n.ErrMessage)
+			continue
 		}
 		if n.State == nil {
 			continue
@@ -356,6 +379,85 @@ func (r *runtime) waitForRunning(ctx context.Context) (*ipnstate.Status, error) 
 			r.setPendingState(StateRegistering, "connecting")
 		}
 	}
+}
+
+func (r *runtime) markConnected(status *ipnstate.Status) bool {
+	r.transitionMu.Lock()
+	defer r.transitionMu.Unlock()
+	if r.closed.Load() || !r.isCurrent() {
+		return false
+	}
+
+	r.mu.Lock()
+	r.state = StateConnected
+	r.authURL = status.AuthURL
+	r.tailIPs = append([]netip.Addr(nil), status.TailscaleIPs...)
+	r.mu.Unlock()
+
+	r.connected.Store(true)
+	r.connectedOnce.Do(func() {
+		if r.connectedCh != nil {
+			close(r.connectedCh)
+		}
+	})
+	return true
+}
+
+func (r *runtime) startConnectedServices(tailIPs []netip.Addr) {
+	r.connectedServicesOnce.Do(func() {
+		if r.closed.Load() || !r.isCurrent() {
+			return
+		}
+		if r.cfg.Mesh {
+			r.startSocks5(tailIPs)
+		}
+		if r.closed.Load() || !r.isCurrent() {
+			return
+		}
+		if r.cfg.ExposeController {
+			r.startController()
+		}
+	})
+}
+
+func (r *runtime) watchStartupGrace(grace time.Duration) {
+	timer := time.NewTimer(grace)
+	defer timer.Stop()
+	select {
+	case <-r.connectedCh:
+		return
+	case <-r.cancelCtx:
+		return
+	case <-timer.C:
+	}
+	r.disableAfterStartupGrace(grace)
+}
+
+func (r *runtime) disableAfterStartupGrace(grace time.Duration) {
+	r.transitionMu.Lock()
+	if r.closed.Load() || r.connected.Load() {
+		r.transitionMu.Unlock()
+		return
+	}
+	if !current.CompareAndSwap(r, (*runtime)(nil)) {
+		r.transitionMu.Unlock()
+		return
+	}
+	r.transitionMu.Unlock()
+
+	log.Warnln("[Tailscale] startup grace %s exceeded, tsnet disabled for this run; reload/restart to retry", formatStartupGrace(grace))
+	r.Close()
+}
+
+func (r *runtime) isCurrent() bool {
+	return current.Load().(*runtime) == r
+}
+
+func formatStartupGrace(grace time.Duration) string {
+	if grace%time.Second == 0 {
+		return strconv.FormatInt(int64(grace/time.Second), 10) + "s"
+	}
+	return grace.String()
 }
 
 func (r *runtime) setPendingState(state State, reason string) {
@@ -408,6 +510,9 @@ func (r *runtime) Close() {
 		}
 		if r.lock != nil {
 			_ = r.lock.Close()
+		}
+		if r.endResolverLifecycle != nil {
+			r.endResolverLifecycle()
 		}
 	})
 }
@@ -537,6 +642,11 @@ func (r *runtime) retryStartSocks5TCP(force bool) bool {
 	}
 
 	r.mu.Lock()
+	if r.closed.Load() {
+		r.mu.Unlock()
+		_ = ln.Close()
+		return false
+	}
 	r.tcpListeners = append(r.tcpListeners, ln)
 	r.mu.Unlock()
 
@@ -582,6 +692,11 @@ func (r *runtime) retryStartSocks5UDP(force bool, tailIPs []netip.Addr) bool {
 			continue
 		}
 		r.mu.Lock()
+		if r.closed.Load() {
+			r.mu.Unlock()
+			_ = pc.Close()
+			continue
+		}
 		r.udpConns = append(r.udpConns, pc)
 		r.mu.Unlock()
 		bindAddr := socks5.AddrFromStdAddrPort(netip.AddrPortFrom(ip, uint16(port)))
@@ -701,6 +816,11 @@ func (r *runtime) startController() {
 	}
 	srv := &http.Server{Handler: r.cfg.ControllerHandler}
 	r.mu.Lock()
+	if r.closed.Load() {
+		r.mu.Unlock()
+		_ = ln.Close()
+		return
+	}
 	r.tcpListeners = append(r.tcpListeners, ln)
 	r.httpServers = append(r.httpServers, srv)
 	r.mu.Unlock()

@@ -127,8 +127,9 @@ Startup:
 6. The runtime resolves and locks `state-dir`.
 7. The runtime creates a stable node name of the form `mihomo-<short-id>`.
 8. The runtime starts `tsnet.Server`.
-9. It waits for Tailscale IP assignment.
+9. It waits up to 60 seconds for Tailscale IP assignment.
 10. If connected, it optionally starts tailnet SOCKS5 and controller listeners.
+11. If the node is not connected within 60 seconds, `tsnet` is disabled for this run and the main mihomo process continues.
 
 Reload:
 
@@ -144,6 +145,7 @@ Shutdown:
 
 - `main` calls `tsnet.Stop()`.
 - The runtime closes listeners, packet conns, tsnet server, and the state-dir lock.
+- A reload or restart retries `tsnet` startup after a previous 60-second startup grace timeout.
 
 ## Registration And Authorization
 
@@ -158,6 +160,8 @@ Expected first-run flow:
 5. `mihomo` logs the pending state and auth URL if available.
 6. User approves the node using the native Headscale/Tailscale workflow.
 7. Runtime enters `connected` after the control server accepts the node.
+
+`login-server` hostnames are resolved by Tailscale's internal control-plane paths on a best-effort basis. If a hostname cannot be resolved or the control server cannot complete authorization within the 60-second startup grace period, `tsnet` is disabled for the current run without changing the normal mihomo DNS behavior.
 
 Important state mapping:
 
@@ -258,7 +262,8 @@ Config errors that fail config load:
 Runtime errors that disable only the subfeature:
 
 - `state-dir` lock failure disables the `tsnet` subsystem.
-- `tsnet.Server.Start` failure sets `register-failed`.
+- `tsnet.Server.Start` failure sets `register-failed` until the startup grace watchdog disables `tsnet`.
+- startup grace timeout after 60 seconds disables `tsnet` for this run.
 - pending authorization sets `unregistered`.
 - machine authorization requirement sets `needs-reauth`.
 - mesh SOCKS listener failure disables mesh SOCKS until retry.
