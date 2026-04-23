@@ -104,6 +104,7 @@ func (d *Dialer) ListenPacket(ctx context.Context, network, address string, rAdd
 var current atomic.Value // stores *runtime
 var disableTailscaleLogUploadsOnce sync.Once
 var defaultResolverLifecycle atomic.Int32
+var tailscaleAuthURLLogSeen sync.Map
 
 func init() {
 	current.Store((*runtime)(nil))
@@ -350,6 +351,9 @@ func (r *runtime) waitForRunning(ctx context.Context) (*ipnstate.Status, error) 
 		if err != nil {
 			return nil, fmt.Errorf("watch state: %w", err)
 		}
+		if n.BrowseToURL != nil {
+			r.setAuthURL(*n.BrowseToURL)
+		}
 		if n.ErrMessage != nil {
 			r.setPendingState(StateRegistering, *n.ErrMessage)
 			continue
@@ -379,6 +383,21 @@ func (r *runtime) waitForRunning(ctx context.Context) (*ipnstate.Status, error) 
 			r.setPendingState(StateRegistering, "connecting")
 		}
 	}
+}
+
+func (r *runtime) setAuthURL(authURL string) {
+	authURL = strings.TrimSpace(authURL)
+	if authURL == "" {
+		return
+	}
+	r.mu.Lock()
+	if r.authURL == authURL {
+		r.mu.Unlock()
+		return
+	}
+	r.authURL = authURL
+	r.mu.Unlock()
+	logAuthURLOnce(authURL)
 }
 
 func (r *runtime) markConnected(status *ipnstate.Status) bool {
@@ -856,7 +875,36 @@ func stableNodeName(stateDir string) (string, error) {
 
 func userLogf(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
+	if authURL, ok := authURLFromTsnetUserLog(msg); ok {
+		logAuthURLOnce(authURL)
+		return
+	}
 	log.Infoln("[Tailscale] %s", msg)
+}
+
+func authURLFromTsnetUserLog(msg string) (string, bool) {
+	const prefix = "To start this tsnet server, restart with TS_AUTHKEY set, or go to: "
+	authURL, ok := strings.CutPrefix(msg, prefix)
+	if !ok {
+		return "", false
+	}
+	authURL = strings.TrimSpace(authURL)
+	return authURL, authURL != ""
+}
+
+func logAuthURLOnce(authURL string) {
+	if markAuthURLLogSeen(authURL) {
+		log.Warnln("[Tailscale] auth-url=%s", authURL)
+	}
+}
+
+func markAuthURLLogSeen(authURL string) bool {
+	authURL = strings.TrimSpace(authURL)
+	if authURL == "" {
+		return false
+	}
+	_, loaded := tailscaleAuthURLLogSeen.LoadOrStore(authURL, struct{}{})
+	return !loaded
 }
 
 func formatTailIPs(ips []netip.Addr) string {
