@@ -152,6 +152,10 @@ func (ss *Socks5) listenPacketContext(ctx context.Context, metadata *C.Metadata,
 		}
 		return
 	} else if bindUDPAddr.IP.IsUnspecified() {
+		// Keep the tsnet path intentionally small: do not add tailnet identity
+		// or MagicDNS relay-address resolution here. Tailnet addresses are
+		// private; if this resolution misses, the tsnet UDP attempt simply
+		// fails and falls back to the existing default path below.
 		serverAddr, err := resolveUDPAddr(ctx, "udp", ss.Addr(), C.IPv4Prefer)
 		if err != nil {
 			if usedTsnet {

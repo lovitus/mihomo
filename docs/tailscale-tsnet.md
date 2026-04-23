@@ -226,6 +226,7 @@ UDP outbound behavior:
 - If the `tsnet` TCP control path or `tsnet` PacketConn path fails, the whole UDP ASSOCIATE is retried once using the original dialer.
 - If the original dialer also fails, the error is returned.
 - `tsnet` UDP PacketConn binds `<local-tail-ip>:0` matching the remote UDP relay address family.
+- When a SOCKS5 server returns an unspecified UDP bind address, the implementation intentionally does not add tailnet identity lookup or MagicDNS relay-address resolution. Tailnet addresses are private and this path is best-effort; if the tsnet UDP attempt misses, the existing default-dialer retry handles recovery.
 
 ## Controller Exposure
 
