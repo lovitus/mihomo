@@ -68,11 +68,10 @@ func main() {
 	// Defensive programming: panic when code mistakenly calls net.DefaultResolver
 	net.DefaultResolver.PreferGo = true
 	net.DefaultResolver.Dial = func(ctx context.Context, network, address string) (net.Conn, error) {
-		if allowDefaultResolverDialForCurrentStack() {
+		if tsnet.DefaultResolverDialAllowed() {
 			var d net.Dialer
 			return d.DialContext(ctx, network, address)
 		}
-		//panic("should never be called")
 		buf := make([]byte, 1024)
 		for {
 			n := runtime.Stack(buf, true)

@@ -54,3 +54,20 @@ func TestDisableTailscaleBackgroundLogUploadsSetsNoLogsKnob(t *testing.T) {
 		t.Fatalf("TS_NO_LOGS_NO_SUPPORT mismatch: got %q, want %q", got, "true")
 	}
 }
+
+func TestDefaultResolverCompatibilityModeEnabled(t *testing.T) {
+	defaultResolverCompatibilityMode.Store(false)
+	t.Cleanup(func() {
+		defaultResolverCompatibilityMode.Store(false)
+	})
+
+	if DefaultResolverDialAllowed() {
+		t.Fatal("resolver compatibility mode unexpectedly enabled")
+	}
+
+	enableDefaultResolverCompatibilityMode()
+
+	if !DefaultResolverDialAllowed() {
+		t.Fatal("resolver compatibility mode was not enabled")
+	}
+}

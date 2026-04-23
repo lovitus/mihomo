@@ -101,6 +101,7 @@ func (d *Dialer) ListenPacket(ctx context.Context, network, address string, rAdd
 
 var current atomic.Value // stores *runtime
 var disableTailscaleLogUploadsOnce sync.Once
+var defaultResolverCompatibilityMode atomic.Bool
 
 func init() {
 	current.Store((*runtime)(nil))
@@ -112,6 +113,10 @@ func CurrentSnapshot() Snapshot {
 		return Snapshot{State: StateDisabled}
 	}
 	return rt.snapshot()
+}
+
+func DefaultResolverDialAllowed() bool {
+	return defaultResolverCompatibilityMode.Load()
 }
 
 // NotifyUse marks a runtime usage event.
@@ -150,6 +155,7 @@ func ApplyConfig(cfg Config) {
 	}
 
 	disableTailscaleBackgroundLogUploads()
+	enableDefaultResolverCompatibilityMode()
 
 	server := &tsnetlib.Server{
 		Dir:        stateDir,
@@ -184,6 +190,12 @@ func disableTailscaleBackgroundLogUploads() {
 		envknob.SetNoLogsNoSupport()
 		log.Infoln("[Tailscale] disabled upstream logtail uploads for mihomo resolver compatibility")
 	})
+}
+
+func enableDefaultResolverCompatibilityMode() {
+	if defaultResolverCompatibilityMode.CompareAndSwap(false, true) {
+		log.Infoln("[Tailscale] enabled stdlib resolver compatibility for background DERP/netcheck lookups")
+	}
 }
 
 func Stop() {
