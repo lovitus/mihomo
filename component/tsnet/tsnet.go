@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -184,6 +185,7 @@ func ApplyConfig(cfg Config) {
 		udpConns:             nil,
 	}
 	current.Store(rt)
+	rt.logStateDiagnostic("runtime-created", "", nil)
 	go rt.run()
 	go rt.watchStartupGrace(startupGracePeriod)
 }
@@ -301,12 +303,15 @@ func (r *runtime) run() {
 	}
 
 	log.Infoln("[Tailscale] starting node=%s login-server=%s state-dir=%s", r.nodeName, r.cfg.LoginServer, r.stateDir)
+	r.logStateDiagnostic("before-server-start", "", nil)
 	if err := r.server.Start(); err != nil {
 		r.setState(StateRegisterFailed)
 		log.Warnln("[Tailscale] register failed: %s", err)
+		r.logStateDiagnostic("server-start-failed", "", nil)
 		return
 	}
 	r.started.Store(true)
+	r.logStateDiagnostic("after-server-start", "", nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -323,6 +328,7 @@ func (r *runtime) run() {
 		}
 		r.setState(StateRegisterFailed)
 		log.Warnln("[Tailscale] status=register-failed login-server=%s state-dir=%s node-name=%s reason=%s", r.cfg.LoginServer, r.stateDir, r.nodeName, err)
+		r.logStateDiagnostic("register-failed", "", nil)
 		return
 	}
 
@@ -331,6 +337,7 @@ func (r *runtime) run() {
 	}
 
 	log.Infoln("[Tailscale] status=connected login-server=%s node-name=%s tail-ip=%s", r.cfg.LoginServer, r.nodeName, formatTailIPs(status.TailscaleIPs))
+	r.logStateDiagnostic("connected", status.AuthURL, status)
 	r.startConnectedServices(status.TailscaleIPs)
 }
 
@@ -398,6 +405,7 @@ func (r *runtime) setAuthURL(authURL string) {
 	r.authURL = authURL
 	r.mu.Unlock()
 	logAuthURLOnce(authURL)
+	r.logStateDiagnostic("auth-url", authURL, nil)
 }
 
 func (r *runtime) markConnected(status *ipnstate.Status) bool {
@@ -465,6 +473,7 @@ func (r *runtime) disableAfterStartupGrace(grace time.Duration) {
 	r.transitionMu.Unlock()
 
 	log.Warnln("[Tailscale] startup grace %s exceeded, tsnet disabled for this run; reload/restart to retry", formatStartupGrace(grace))
+	r.logStateDiagnostic("startup-grace-timeout", "", nil)
 	r.Close()
 }
 
@@ -502,6 +511,7 @@ func (r *runtime) setPendingState(state State, reason string) {
 
 func (r *runtime) Close() {
 	r.closeOnce.Do(func() {
+		r.logStateDiagnostic("close-begin", "", nil)
 		r.closed.Store(true)
 		r.cancelOnce.Do(func() { close(r.cancelCtx) })
 		<-r.runDone
@@ -533,6 +543,7 @@ func (r *runtime) Close() {
 		if r.endResolverLifecycle != nil {
 			r.endResolverLifecycle()
 		}
+		r.logStateDiagnostic("close-end", "", nil)
 	})
 }
 
@@ -890,6 +901,89 @@ func authURLFromTsnetUserLog(msg string) (string, bool) {
 	}
 	authURL = strings.TrimSpace(authURL)
 	return authURL, authURL != ""
+}
+
+func authNodeKeyFromURL(authURL string) string {
+	authURL = strings.TrimSpace(authURL)
+	if authURL == "" {
+		return "-"
+	}
+	u, err := url.Parse(authURL)
+	if err != nil {
+		return "-"
+	}
+	for _, part := range strings.Split(u.Path, "/") {
+		if strings.HasPrefix(part, "nodekey:") {
+			return part
+		}
+	}
+	return "-"
+}
+
+func (r *runtime) logStateDiagnostic(event, authURL string, status *ipnstate.Status) {
+	diag := readStateDiagnostic(r.stateDir)
+	nodeKey := "-"
+	if status != nil && status.Self != nil && !status.Self.PublicKey.IsZero() {
+		nodeKey = status.Self.PublicKey.String()
+	}
+	log.Infoln(
+		"[Tailscale] state-diagnostic event=%s state-dir=%s state-file=%s exists=%t size=%d mtime=%s store-readable=%t has-state=%t nodekey=%s auth-nodekey=%s",
+		event,
+		r.stateDir,
+		diag.stateFile,
+		diag.exists,
+		diag.size,
+		diag.mtime,
+		diag.storeReadable,
+		diag.hasState,
+		nodeKey,
+		authNodeKeyFromURL(authURL),
+	)
+}
+
+type stateDiagnostic struct {
+	stateFile     string
+	exists        bool
+	size          int64
+	mtime         string
+	storeReadable bool
+	hasState      bool
+}
+
+func readStateDiagnostic(stateDir string) stateDiagnostic {
+	diag := stateDiagnostic{
+		stateFile: filepath.Join(stateDir, "tailscaled.state"),
+		mtime:     "-",
+	}
+	info, err := os.Stat(diag.stateFile)
+	if err != nil {
+		return diag
+	}
+	diag.exists = true
+	diag.size = info.Size()
+	diag.mtime = info.ModTime().UTC().Format(time.RFC3339Nano)
+
+	b, err := os.ReadFile(diag.stateFile)
+	if err != nil {
+		return diag
+	}
+	var store map[string]json.RawMessage
+	if err := json.Unmarshal(b, &store); err != nil {
+		return diag
+	}
+	diag.storeReadable = true
+	for _, raw := range store {
+		if isNonEmptyStateValue(raw) {
+			diag.hasState = true
+			break
+		}
+	}
+	return diag
+}
+
+func isNonEmptyStateValue(raw json.RawMessage) bool {
+	value := strings.TrimSpace(string(raw))
+	return value != "" && value != "null" && value != `""`
 }
 
 func logAuthURLOnce(authURL string) {

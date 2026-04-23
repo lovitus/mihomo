@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -102,6 +103,40 @@ func TestAuthURLFromTsnetUserLog(t *testing.T) {
 
 	if _, ok := authURLFromTsnetUserLog("unrelated log"); ok {
 		t.Fatal("unrelated log was parsed as auth URL")
+	}
+}
+
+func TestAuthNodeKeyFromURL(t *testing.T) {
+	if got := authNodeKeyFromURL("http://headscale.example/register/nodekey:abc123"); got != "nodekey:abc123" {
+		t.Fatalf("auth nodekey mismatch: got %q", got)
+	}
+	if got := authNodeKeyFromURL("http://headscale.example/register"); got != "-" {
+		t.Fatalf("missing auth nodekey mismatch: got %q", got)
+	}
+}
+
+func TestReadStateDiagnostic(t *testing.T) {
+	stateDir := t.TempDir()
+
+	diag := readStateDiagnostic(stateDir)
+	if diag.exists || diag.storeReadable || diag.hasState {
+		t.Fatalf("missing state diagnostic mismatch: %+v", diag)
+	}
+
+	if err := os.WriteFile(filepath.Join(stateDir, "tailscaled.state"), []byte(`{}`), 0o600); err != nil {
+		t.Fatalf("write empty state: %v", err)
+	}
+	diag = readStateDiagnostic(stateDir)
+	if !diag.exists || !diag.storeReadable || diag.hasState {
+		t.Fatalf("empty state diagnostic mismatch: %+v", diag)
+	}
+
+	if err := os.WriteFile(filepath.Join(stateDir, "tailscaled.state"), []byte(`{"_current-profile":"AQID"}`), 0o600); err != nil {
+		t.Fatalf("write populated state: %v", err)
+	}
+	diag = readStateDiagnostic(stateDir)
+	if !diag.exists || !diag.storeReadable || !diag.hasState {
+		t.Fatalf("populated state diagnostic mismatch: %+v", diag)
 	}
 }
 
