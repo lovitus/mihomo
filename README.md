@@ -18,6 +18,50 @@
   </a>
 </p>
 
+## Fork Notes (lovitus)
+
+This fork exists to improve proxy-group selection stability for large deployments (many groups and many nodes), especially when groups contain both healthy and timeout nodes.
+
+### Why this fork exists
+
+- Upstream behavior can temporarily route to timeout nodes even when healthy nodes are still present.
+- Group delay output and group selection criteria may diverge, making troubleshooting confusing.
+
+### What changed in this fork
+
+- `adapter/outboundgroup/urltest.go`
+  - `url-test` now prefers alive nodes only when at least one alive node exists.
+  - Prevents falling back to timeout nodes while healthy choices are available.
+  - After group URL tests complete, resets and refreshes the cached fast node decision immediately.
+  - Added lock-protected state access for `selected`/`fastNode` to avoid concurrent read-write races under API set/force-set plus runtime auto-selection.
+- `adapter/outboundgroup/fallback.go`
+  - Reworked selected-node handling:
+    - check the selected node first;
+    - if selected is unavailable, clear it and then iterate all nodes in configured order, selecting the first alive node (serial order, not concurrent scan).
+  - Reduces accidental fallback to an unhealthy first entry.
+  - Added lock-protected selected-node state to avoid race conditions when manual override and automatic probing happen concurrently.
+- `adapter/outboundgroup/groupbase.go`
+  - Group delay map now records only nodes that are still alive for the tested URL.
+  - Better aligns API delay output with actual group selection decisions.
+- `transport/sudoku/obfs/httpmask/tunnel.go`
+  - Fixed missing `cancel()` calls in poll pull loop early-return branches, avoiding context/timer leaks during long-running retry/failure conditions.
+- `docs/UPSTREAM_MERGE.md`
+  - Added a dedicated upstream sync and conflict-resolution playbook for maintaining this fork over time.
+
+### Local validation done
+
+- `go test ./...`
+- `go vet ./...`
+- `go test -race ./adapter/outboundgroup ./hub/route ./transport/sudoku/obfs/httpmask`
+
+### Long-term maintenance
+
+- Follow [`docs/UPSTREAM_MERGE.md`](docs/UPSTREAM_MERGE.md) for:
+  - syncing `upstream/Alpha`,
+  - replaying this fork policy after conflicts,
+  - rebuilding and publishing releases.
+- Performance tuning backlog is tracked in [`docs/PERFORMANCE_REPORT.md`](docs/PERFORMANCE_REPORT.md).
+
 ## Features
 
 - Local HTTP/HTTPS/SOCKS server with authentication support
