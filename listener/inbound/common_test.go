@@ -64,16 +64,32 @@ type TestDialer struct {
 }
 
 func (t *TestDialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
-start:
-	conn, err := t.dialer.DialContext(ctx, network, address)
-	if err != nil && ctx.Err() == nil && t.ctx.Err() == nil {
+	var err error
+	backoff := time.Millisecond
+	for {
+		var conn net.Conn
+		conn, err = t.dialer.DialContext(ctx, network, address)
+		if err == nil || ctx.Err() != nil || t.ctx.Err() != nil {
+			return conn, err
+		}
 		// We are conducting tests locally, and they shouldn't fail.
 		// However, a large number of requests in a short period during concurrent testing can exhaust system ports.
 		// This can lead to various errors such as WSAECONNREFUSED and WSAENOBUFS.
-		// So we just retry if the context is not canceled.
-		goto start
+		// Retry with a small backoff so a temporary port shortage does not turn into a CPU spin.
+		timer := time.NewTimer(backoff)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, err
+		case <-t.ctx.Done():
+			timer.Stop()
+			return nil, err
+		}
+		if backoff < 100*time.Millisecond {
+			backoff *= 2
+		}
 	}
-	return conn, err
 }
 
 func (t *TestDialer) ListenPacket(ctx context.Context, network, address string, rAddrPort netip.AddrPort) (net.PacketConn, error) {
@@ -288,28 +304,45 @@ func NewHttpTestTunnel() *TestTunnel {
 		})
 	}
 
+	concurrentRequests := func(t *testing.T) int {
+		if skip, _ := strconv.ParseBool(os.Getenv("SKIP_CONCURRENT_TEST")); skip {
+			t.Skip("skip concurrent test")
+		}
+		if requests := os.Getenv("INBOUND_CONCURRENT_REQUESTS"); requests != "" {
+			num, err := strconv.Atoi(requests)
+			if !assert.NoError(t, err) {
+				return 0
+			}
+			if !assert.Positive(t, num) {
+				return 0
+			}
+			return num
+		}
+		if stress, _ := strconv.ParseBool(os.Getenv("INBOUND_STRESS_TEST")); stress {
+			return len(httpData) / 1024
+		}
+		return 4
+	}
+
 	concurrentTestFn := func(t *testing.T, proxy C.ProxyAdapter) {
 		// Concurrent testing to detect stress
 		t.Run("Concurrent", func(t *testing.T) {
-			if skip, _ := strconv.ParseBool(os.Getenv("SKIP_CONCURRENT_TEST")); skip {
-				t.Skip("skip concurrent test")
-			}
 			wg := sync.WaitGroup{}
-			num := len(httpData) / 1024
+			num := concurrentRequests(t)
 			for i := 1; i <= num; i++ {
 				i := i
 				wg.Add(1)
 				go func() {
-					testFn(t, proxy, "https", i*1024)
 					defer wg.Done()
+					testFn(t, proxy, "https", i*1024)
 				}()
 			}
 			for i := 1; i <= num; i++ {
 				i := i
 				wg.Add(1)
 				go func() {
-					testFn(t, proxy, "http", i*1024)
 					defer wg.Done()
+					testFn(t, proxy, "http", i*1024)
 				}()
 			}
 			wg.Wait()

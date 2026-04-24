@@ -103,7 +103,8 @@ tailscale:
   state-dir: tailscale # 相对路径按 mihomo home dir 解析，目录内容属于敏感身份材料
   expose-controller: false # 通过 tailnet 暴露普通 external-controller；不支持 tls/unix/pipe
   mesh: false # 在 tailnet 上暴露标准 SOCKS5 服务
-  socks5: 1666 # tailnet SOCKS5 端口，不监听宿主机 127.0.0.1/0.0.0.0
+  socks5: 1666 # tailnet-facing mesh/node SOCKS5 端口，不监听宿主机 127.0.0.1/0.0.0.0
+  gateway-socks5: 127.0.0.1:1667 # 宿主机本地 SOCKS5 gateway，用于访问 tailnet 内服务；留空关闭
 
 # tailnet SOCKS5 节点按标准 socks5 写法配置；旧核心最多只是该节点不通。
 # proxies:
@@ -111,6 +112,11 @@ tailscale:
 #     type: socks5
 #     server: 10.20.0.33 # 推荐使用 Headscale 分配的 tailnet IP
 #     port: 1666
+#     udp: true
+#   - name: tailnet-gateway
+#     type: socks5
+#     server: 127.0.0.1
+#     port: 1667
 #     udp: true
 #   - name: ss-through-home-tail
 #     type: ss
