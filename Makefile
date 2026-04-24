@@ -195,6 +195,15 @@ releases: $(gz_releases) $(zip_releases)
 vet:
 	go test ./...
 
+test-inbound:
+	go test ./listener/inbound -count=1
+
+test-inbound-no-concurrent:
+	SKIP_CONCURRENT_TEST=1 go test ./listener/inbound -count=1
+
+test-inbound-stress:
+	INBOUND_STRESS_TEST=1 go test ./listener/inbound -count=1 -timeout=180s
+
 lint:
 	golangci-lint run ./...
 
@@ -203,4 +212,3 @@ clean:
 
 CLANG ?= clang-14
 CFLAGS := -O2 -g -Wall -Werror $(CFLAGS)
-

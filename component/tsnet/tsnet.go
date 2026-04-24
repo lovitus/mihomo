@@ -50,6 +50,8 @@ const (
 	tailnetSocksHandshakeTimeout = 10 * time.Second
 	tailnetSocksMaxActiveConns   = 1024
 	tailnetSocksLimitLogInterval = 30 * time.Second
+	gatewayUDPMaxSessions        = 4096
+	gatewayLogInterval           = 30 * time.Second
 )
 
 type Snapshot struct {
@@ -85,6 +87,7 @@ type Config struct {
 	ExposeController  bool
 	Mesh              bool
 	Socks5            int
+	GatewaySocks5     string
 	ControllerAddress string
 	ControllerHandler http.Handler
 	Tunnel            C.Tunnel
@@ -183,6 +186,7 @@ func ApplyConfig(cfg Config) {
 		socks5Port:           cfg.Socks5,
 		tcpListeners:         nil,
 		udpConns:             nil,
+		gatewayUDPSessions:   make(map[string]*gatewayUDPSession),
 	}
 	current.Store(rt)
 	rt.logStateDiagnostic("runtime-created", "", nil)
@@ -274,6 +278,21 @@ type runtime struct {
 	activeSocksConns atomic.Int32
 	limitLogMu       sync.Mutex
 	lastLimitLog     time.Time
+
+	gatewayTCPListener net.Listener
+	gatewayUDPConn     net.PacketConn
+	gatewayUDPMu       sync.Mutex
+	gatewayUDPSessions map[string]*gatewayUDPSession
+	gatewayIdentity    tailnetIdentity
+	gatewayRefreshAt   time.Time
+	gatewayLogMu       sync.Mutex
+	gatewayLastLogs    map[string]time.Time
+
+	gatewayDialTCPFn      func(ctx context.Context, target string) (net.Conn, error)
+	gatewayListenPacketFn func(network, addr string) (net.PacketConn, error)
+	gatewayListenTCPFn    func(addr string) (net.Listener, error)
+	gatewayListenUDPFn    func(addr string) (net.PacketConn, error)
+	gatewayUDPTimeout     time.Duration
 }
 
 func (r *runtime) snapshot() Snapshot {
@@ -419,6 +438,7 @@ func (r *runtime) markConnected(status *ipnstate.Status) bool {
 	r.state = StateConnected
 	r.authURL = status.AuthURL
 	r.tailIPs = append([]netip.Addr(nil), status.TailscaleIPs...)
+	r.gatewayIdentity = newTailnetIdentity(status)
 	r.mu.Unlock()
 
 	r.connected.Store(true)
@@ -443,6 +463,12 @@ func (r *runtime) startConnectedServices(tailIPs []netip.Addr) {
 		}
 		if r.cfg.ExposeController {
 			r.startController()
+		}
+		if r.closed.Load() || !r.isCurrent() {
+			return
+		}
+		if r.cfg.GatewaySocks5 != "" {
+			r.startGateway()
 		}
 	})
 }
@@ -519,14 +545,28 @@ func (r *runtime) Close() {
 		tcpListeners := r.tcpListeners
 		udpConns := r.udpConns
 		httpServers := r.httpServers
+		gatewayTCPListener := r.gatewayTCPListener
+		gatewayUDPConn := r.gatewayUDPConn
 		r.tcpListeners = nil
 		r.udpConns = nil
 		r.httpServers = nil
+		r.gatewayTCPListener = nil
+		r.gatewayUDPConn = nil
 		r.mu.Unlock()
+		gatewaySessions := r.closeGatewayUDPSessions()
 		for _, srv := range httpServers {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			_ = srv.Shutdown(ctx)
 			cancel()
+		}
+		if gatewayTCPListener != nil {
+			_ = gatewayTCPListener.Close()
+		}
+		if gatewayUDPConn != nil {
+			_ = gatewayUDPConn.Close()
+		}
+		for _, session := range gatewaySessions {
+			session.close()
 		}
 		for _, ln := range tcpListeners {
 			_ = ln.Close()

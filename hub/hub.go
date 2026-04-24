@@ -53,6 +53,7 @@ func ApplyConfig(cfg *config.Config) {
 		ExposeController:  cfg.Tailscale.ExposeController,
 		Mesh:              cfg.Tailscale.Mesh,
 		Socks5:            cfg.Tailscale.Socks5,
+		GatewaySocks5:     cfg.Tailscale.GatewaySocks5,
 		ControllerAddress: cfg.Controller.ExternalController,
 		ControllerHandler: newRouteHandler(cfg),
 		Tunnel:            tunnel.Tunnel,

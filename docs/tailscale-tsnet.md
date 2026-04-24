@@ -199,6 +199,95 @@ Safety hardening:
 - If the cap is reached, new tailnet SOCKS connections are closed immediately.
 - UDP data flow is not given a second session manager; it uses existing tunnel/NAT behavior.
 
+## Gateway SOCKS5
+
+`tailscale.gateway-socks5` is a host-facing SOCKS5 gateway for local applications that need to reach services inside the tailnet through the embedded `tsnet` node.
+
+Example:
+
+```yaml
+tailscale:
+  enable: true
+  login-server: https://headscale.example.com
+  state-dir: tailscale
+  socks5: 1666
+  gateway-socks5: 127.0.0.1:1667
+```
+
+Concept split:
+
+- `tailscale.socks5` is tailnet-facing mesh/node SOCKS5. Other tailnet nodes connect to this mihomo node through its tailnet IP.
+- `tailscale.gateway-socks5` is host-facing tailnet access SOCKS5. Local apps connect to it to reach tailnet services such as SSH, RDP, SMB, DNS, or HTTP.
+- `gateway-socks5` does not enter mihomo rule/group/DNS selection. If rule-based selection is needed, configure `127.0.0.1:1667` as a normal `socks5` proxy node.
+
+Address rules:
+
+- Empty or missing value disables the gateway.
+- A port-only value such as `1667` is normalized to `127.0.0.1:1667`.
+- `127.0.0.1:1667`, `[::1]:1667`, `:1667`, and `0.0.0.0:1667` are valid.
+- Port `0`, `:0`, invalid ports, and invalid addresses are rejected.
+- `:1667`, `0.0.0.0:1667`, and `[::]:1667` are allowed but log a warning because they expose tailnet access to the host network.
+- Listening uses Go's standard single-address semantics; mihomo does not split wildcard listeners into separate IPv4 and IPv6 sockets.
+
+TCP behavior:
+
+- SOCKS5 CONNECT is dialed with `tsnet.Server.Dial(ctx, "tcp", target)`.
+- The gateway does not use the global mihomo tunnel, rules, groups, or DNS resolver.
+- TCP connect timeout uses the existing `C.DefaultTCPTimeout`.
+- Data relay uses the existing connection relay helper.
+- Dial failures close the current connection and do not fall back to another path.
+- No gateway-specific TCP connection cap is added; behavior matches ordinary host SOCKS listeners.
+
+UDP behavior:
+
+- SOCKS5 UDP ASSOCIATE is supported when the gateway UDP bind succeeds.
+- If the gateway UDP bind fails, UDP ASSOCIATE fails explicitly and does not return a fake bind address.
+- For wildcard gateway listeners such as `:1667`, `0.0.0.0:1667`, or `[::]:1667`, the UDP ASSOCIATE reply uses the concrete local IP of the accepted TCP control connection.
+- If a wildcard gateway listener cannot derive a concrete local IP from the accepted TCP control connection, UDP ASSOCIATE fails instead of returning `0.0.0.0` or `[::]`.
+- SOCKS5 UDP packet decode, encode, write-back, and buffer drop behavior reuse `listener/sockscommon`.
+- UDP does not enter the global mihomo UDP NAT/rule/group/DNS pipeline.
+- UDP session key is `clientAddr.String() + "|" + resolvedTargetAddrPort.String()`.
+- `resolvedTargetAddrPort` is a normalized single `netip.AddrPort`; IPv4-mapped IPv6 addresses are unmapped and zone identifiers are unsupported.
+- Each session owns one `tsnet.Server.ListenPacket("udp", "<local-tail-ip>:0")` PacketConn.
+- Idle timeout uses the existing `C.DefaultUDPTimeout`.
+- UDP sessions close on idle timeout, write/read error, write-back error, reload, or shutdown.
+- A minimal hard cap of `4096` gateway UDP sessions prevents unbounded PacketConn/goroutine growth. New sessions over the cap are dropped with rate-limited warning logs; existing sessions continue.
+
+UDP name resolution:
+
+- TCP names are passed to tsnet directly.
+- UDP names are resolved only from the tsnet identity cache built from `LocalClient().Status(ctx)`.
+- DNSName/FQDN matching is lower-case and ignores a trailing dot.
+- Short HostName matching is accepted only when unique in the visible self/peer set.
+- Unknown names, conflicting hostnames, and refresh failures do not use the system resolver or mihomo DNS; the UDP packet is dropped with rate-limited logs.
+- For peers with both IPv4 and IPv6 tail IPs, gateway UDP prefers the client UDP address family, then IPv4, then IPv6.
+
+Self-loop protection:
+
+- Gateway TCP/UDP blocks targets that resolve to this node's own tail identity and port `tailscale.socks5` or `tailscale.gateway-socks5`.
+- Other self ports are allowed so local tailnet services remain reachable.
+
+Usage as a mihomo proxy node:
+
+```yaml
+proxies:
+  - name: tailnet-gateway
+    type: socks5
+    server: 127.0.0.1
+    port: 1667
+    udp: true
+
+rules:
+  - IP-CIDR,100.64.0.0/10,tailnet-gateway,no-resolve
+```
+
+Manual check tool:
+
+```bash
+go run ./cmd/tsnet-gateway-check -gateway 127.0.0.1:1667 -tcp 100.64.0.10:22
+go run ./cmd/tsnet-gateway-check -gateway 127.0.0.1:1667 -udp 100.64.0.10:53 -udp-payload hex:0000010000010000000000000377777706676f6f676c6503636f6d0000010001
+```
+
 ## SOCKS5 Outbound Reuse
 
 The only outbound behavior change is inside the standard SOCKS5 adapter when connecting to the SOCKS5 server itself.
@@ -287,12 +376,17 @@ New shared listener helper package:
 
 - `listener/sockscommon`
 
+Manual verification command:
+
+- `cmd/tsnet-gateway-check`
+
 Main modified areas:
 
 - config parsing and docs
 - hub apply lifecycle
 - route handler reuse
 - SOCKS5 outbound dial path
+- host-facing tsnet gateway SOCKS5
 - SOCKS5 server handshake reply policy
 - ordinary SOCKS listener wrapper
 - build and test workflows

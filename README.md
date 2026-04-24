@@ -81,6 +81,22 @@ Build with gvisor tun stack:
 go build -tags with_gvisor
 ```
 
+Run tests:
+
+```shell
+go test ./...
+make test-inbound
+```
+
+The `listener/inbound` package includes protocol matrix tests and local loopback traffic tests. The default inbound run keeps concurrent traffic small enough for normal development while still covering concurrent request handling. Heavier resource-exhaustion coverage is opt-in:
+
+```shell
+make test-inbound-stress
+INBOUND_CONCURRENT_REQUESTS=64 go test ./listener/inbound -count=1 -timeout=180s
+```
+
+Use `make test-inbound-no-concurrent` or set `SKIP_CONCURRENT_TEST=1` when debugging unrelated failures on resource-constrained machines.
+
 ### IPTABLES configuration
 
 Work on Linux OS which supported `iptables`

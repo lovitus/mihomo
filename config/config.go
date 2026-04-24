@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	_ "unsafe"
@@ -272,6 +273,7 @@ type Tailscale struct {
 	ExposeController bool
 	Mesh             bool
 	Socks5           int
+	GatewaySocks5    string
 }
 
 type RawTailscale struct {
@@ -281,6 +283,7 @@ type RawTailscale struct {
 	ExposeController bool   `yaml:"expose-controller" json:"expose-controller"`
 	Mesh             bool   `yaml:"mesh" json:"mesh"`
 	Socks5           int    `yaml:"socks5" json:"socks5"`
+	GatewaySocks5    string `yaml:"gateway-socks5" json:"gateway-socks5"`
 }
 
 type RawTun struct {
@@ -851,6 +854,7 @@ func parseTailscale(cfg *RawConfig) (*Tailscale, error) {
 			ExposeController: ts.ExposeController,
 			Mesh:             ts.Mesh,
 			Socks5:           ts.Socks5,
+			GatewaySocks5:    ts.GatewaySocks5,
 		}, nil
 	}
 	if strings.TrimSpace(ts.LoginServer) == "" {
@@ -862,6 +866,10 @@ func parseTailscale(cfg *RawConfig) (*Tailscale, error) {
 	if ts.Socks5 < 1 || ts.Socks5 > 65535 {
 		return nil, fmt.Errorf("tailscale.socks5 must be in range 1..65535: %d", ts.Socks5)
 	}
+	gatewaySocks5, err := normalizeGatewaySocks5(ts.GatewaySocks5)
+	if err != nil {
+		return nil, err
+	}
 	if !C.Path.IsSafePath(ts.StateDir) {
 		return nil, C.Path.ErrNotSafePath(ts.StateDir)
 	}
@@ -872,7 +880,33 @@ func parseTailscale(cfg *RawConfig) (*Tailscale, error) {
 		ExposeController: ts.ExposeController,
 		Mesh:             ts.Mesh,
 		Socks5:           ts.Socks5,
+		GatewaySocks5:    gatewaySocks5,
 	}, nil
+}
+
+func normalizeGatewaySocks5(addr string) (string, error) {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return "", nil
+	}
+	if _, err := strconv.ParseUint(addr, 10, 16); err == nil {
+		if addr == "0" {
+			return "", errors.New("tailscale.gateway-socks5 port must be in range 1..65535: 0")
+		}
+		return net.JoinHostPort("127.0.0.1", addr), nil
+	}
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "", fmt.Errorf("tailscale.gateway-socks5 must be host:port or port: %w", err)
+	}
+	portNum, err := strconv.ParseUint(port, 10, 16)
+	if err != nil || portNum == 0 {
+		return "", fmt.Errorf("tailscale.gateway-socks5 port must be in range 1..65535: %s", port)
+	}
+	if strings.Contains(host, "%") {
+		return "", fmt.Errorf("tailscale.gateway-socks5 zone identifiers are not supported: %s", host)
+	}
+	return net.JoinHostPort(host, port), nil
 }
 
 func parseExperimental(cfg *RawConfig) (*Experimental, error) {
