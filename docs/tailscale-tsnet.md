@@ -413,6 +413,7 @@ CI expectations:
 
 Release workflow:
 
+- This fork does not run branch-push release builds for `pin-1.19.24merge-tailscale`; use a `v*` tag or `workflow_dispatch`.
 - Push a `v*` tag to trigger `Build`.
 - `Upload-Tag-Release` downloads all build artifacts.
 - Checksums are generated.
@@ -421,5 +422,5 @@ Release workflow:
 Recommended release tag for this feature branch:
 
 ```text
-v2026.04.22-persistent-pin.6-tsnet
+v2026.04.24-persistent-pin.16-tsnet
 ```
