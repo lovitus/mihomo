@@ -3,6 +3,7 @@ package tsnet
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -20,6 +21,7 @@ import (
 	"github.com/metacubex/mihomo/transport/socks5"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/types/key"
+	"tailscale.com/types/views"
 )
 
 func TestTailnetSocksActiveConnLimit(t *testing.T) {
@@ -779,6 +781,120 @@ func TestLateConnectedAfterWatchdogTimeoutDoesNotReviveRuntime(t *testing.T) {
 	snapshot := CurrentSnapshot()
 	if snapshot.Ready || snapshot.State != StateDisabled {
 		t.Fatalf("snapshot mismatch after timeout: ready=%v state=%s", snapshot.Ready, snapshot.State)
+	}
+}
+
+func TestAPIStatusDisabledAndLogsAreFailSoft(t *testing.T) {
+	resetTsnetTestState(t)
+
+	status := Status(context.Background())
+	if status.Enable || status.Ready || status.State != StateDisabled {
+		t.Fatalf("disabled status mismatch: %#v", status)
+	}
+	if logs := Logs(); len(logs.Logs) != 0 {
+		t.Fatalf("disabled logs = %d entries, want 0", len(logs.Logs))
+	}
+	b, err := json.Marshal(status)
+	if err != nil {
+		t.Fatalf("marshal disabled status: %v", err)
+	}
+	if bytes.Contains(b, []byte("services")) || bytes.Contains(b, []byte("diagnostic")) {
+		t.Fatalf("disabled status leaked non-minimal fields: %s", b)
+	}
+}
+
+func TestAPIStatusLocalStatusFailureIsFailSoft(t *testing.T) {
+	resetTsnetTestState(t)
+
+	rt := newClosedRunTestRuntime()
+	rt.logs = newLogRing(tsnetLogBufferSize)
+	rt.state = StateConnected
+	rt.nodeName = "mihomo-test"
+	rt.tailIPs = []netip.Addr{netip.MustParseAddr("100.64.0.1")}
+	rt.statusFn = func(context.Context) (*ipnstate.Status, error) {
+		return nil, errors.New("localapi unavailable")
+	}
+	current.Store(rt)
+
+	status := Status(context.Background())
+	if !status.Enable || !status.Ready || status.State != StateConnected {
+		t.Fatalf("runtime status mismatch: %#v", status)
+	}
+	if status.StatusError != "localapi unavailable" {
+		t.Fatalf("statusError = %q, want localapi unavailable", status.StatusError)
+	}
+	if got := strings.Join(status.TailIPs, ","); got != "100.64.0.1" {
+		t.Fatalf("tailIPs = %q, want 100.64.0.1", got)
+	}
+}
+
+func TestAPIPeerStatusConvertsViewsAndOmitsZeroTimes(t *testing.T) {
+	allowed := views.SliceOf([]netip.Prefix{netip.MustParsePrefix("100.64.0.2/32")})
+	tags := views.SliceOf([]string{"tag:server"})
+	routes := views.SliceOf([]netip.Prefix{netip.MustParsePrefix("10.0.0.0/24")})
+	peer := &ipnstate.PeerStatus{
+		HostName:      "peer",
+		DNSName:       "peer.tail.example.",
+		TailscaleIPs:  []netip.Addr{netip.MustParseAddr("100.64.0.2")},
+		AllowedIPs:    &allowed,
+		Tags:          &tags,
+		PrimaryRoutes: &routes,
+	}
+
+	converted := apiPeerStatus(peer)
+	if converted == nil {
+		t.Fatal("converted peer is nil")
+	}
+	if got := strings.Join(converted.AllowedIPs, ","); got != "100.64.0.2/32" {
+		t.Fatalf("AllowedIPs = %q", got)
+	}
+	if got := strings.Join(converted.Tags, ","); got != "tag:server" {
+		t.Fatalf("Tags = %q", got)
+	}
+	if got := strings.Join(converted.PrimaryRoutes, ","); got != "10.0.0.0/24" {
+		t.Fatalf("PrimaryRoutes = %q", got)
+	}
+
+	b, err := json.Marshal(converted)
+	if err != nil {
+		t.Fatalf("marshal peer: %v", err)
+	}
+	if bytes.Contains(b, []byte("0001-01-01T00:00:00Z")) {
+		t.Fatalf("zero time leaked into JSON: %s", b)
+	}
+}
+
+func TestLogRingKeepsRecentEntries(t *testing.T) {
+	ring := newLogRing(3)
+	for i := 0; i < 5; i++ {
+		ring.append(APILogEntry{Event: strconv.Itoa(i)})
+	}
+	logs := ring.entries()
+	if len(logs) != 3 {
+		t.Fatalf("logs len = %d, want 3", len(logs))
+	}
+	if got := logs[0].Event + logs[1].Event + logs[2].Event; got != "234" {
+		t.Fatalf("logs order = %q, want 234", got)
+	}
+}
+
+func TestRuntimeBoundUserLogfDoesNotWriteToCurrentRuntime(t *testing.T) {
+	resetTsnetTestState(t)
+
+	oldRT := newClosedRunTestRuntime()
+	oldRT.logs = newLogRing(tsnetLogBufferSize)
+	defer oldRT.Close()
+	newRT := newClosedRunTestRuntime()
+	newRT.logs = newLogRing(tsnetLogBufferSize)
+	current.Store(newRT)
+
+	oldRT.userLogf("late message")
+
+	if got := oldRT.logs.entries(); len(got) != 1 || got[0].Message != "late message" {
+		t.Fatalf("old runtime logs = %#v", got)
+	}
+	if got := newRT.logs.entries(); len(got) != 0 {
+		t.Fatalf("new runtime received old log: %#v", got)
 	}
 }
 

@@ -52,6 +52,7 @@ const (
 	tailnetSocksLimitLogInterval = 30 * time.Second
 	gatewayUDPMaxSessions        = 4096
 	gatewayLogInterval           = 30 * time.Second
+	tsnetLogBufferSize           = 64
 )
 
 type Snapshot struct {
@@ -169,7 +170,6 @@ func ApplyConfig(cfg Config) {
 		Hostname:   nodeName,
 		ControlURL: cfg.LoginServer,
 		Port:       0,
-		UserLogf:   userLogf,
 	}
 	endResolverLifecycle := beginDefaultResolverLifecycle()
 	rt := &runtime{
@@ -187,7 +187,9 @@ func ApplyConfig(cfg Config) {
 		tcpListeners:         nil,
 		udpConns:             nil,
 		gatewayUDPSessions:   make(map[string]*gatewayUDPSession),
+		logs:                 newLogRing(tsnetLogBufferSize),
 	}
+	server.UserLogf = rt.userLogf
 	current.Store(rt)
 	rt.logStateDiagnostic("runtime-created", "", nil)
 	go rt.run()
@@ -293,6 +295,9 @@ type runtime struct {
 	gatewayListenTCPFn    func(addr string) (net.Listener, error)
 	gatewayListenUDPFn    func(addr string) (net.PacketConn, error)
 	gatewayUDPTimeout     time.Duration
+
+	statusFn func(ctx context.Context) (*ipnstate.Status, error)
+	logs     *logRing
 }
 
 func (r *runtime) snapshot() Snapshot {
@@ -311,6 +316,7 @@ func (r *runtime) setState(state State) {
 	r.mu.Lock()
 	r.state = state
 	r.mu.Unlock()
+	r.appendLog("info", "state", string(state))
 }
 
 func (r *runtime) run() {
@@ -933,6 +939,16 @@ func userLogf(format string, args ...any) {
 	log.Infoln("[Tailscale] %s", msg)
 }
 
+func (r *runtime) userLogf(format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	if authURL, ok := authURLFromTsnetUserLog(msg); ok {
+		r.setAuthURL(authURL)
+		return
+	}
+	r.appendLog("info", "user-log", msg)
+	log.Infoln("[Tailscale] %s", msg)
+}
+
 func authURLFromTsnetUserLog(msg string) (string, bool) {
 	const prefix = "To start this tsnet server, restart with TS_AUTHKEY set, or go to: "
 	authURL, ok := strings.CutPrefix(msg, prefix)
@@ -979,6 +995,7 @@ func (r *runtime) logStateDiagnostic(event, authURL string, status *ipnstate.Sta
 		nodeKey,
 		authNodeKeyFromURL(authURL),
 	)
+	r.appendLog("info", event, "state diagnostic recorded")
 }
 
 type stateDiagnostic struct {
