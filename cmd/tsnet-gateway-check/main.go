@@ -134,6 +134,10 @@ func resolveRelayUDPAddr(relayUDPAddr *net.UDPAddr) (*net.UDPAddr, string, strin
 	if !resolved.IP.IsUnspecified() {
 		return &resolved, listenNetwork, listenAddr, nil
 	}
+	// The gateway is expected to translate wildcard UDP listeners into a
+	// concrete relay address via the accepted TCP control connection. If an
+	// unspecified relay still appears here, surface it as a real failure rather
+	// than guessing an address locally and masking the server-side bug.
 	return nil, "", "", fmt.Errorf("unsupported unspecified UDP relay address: %s", relayUDPAddr.String())
 }
 

@@ -151,6 +151,11 @@ func (r *runtime) currentGatewayUDPSocksBind(conn net.Conn) socks5.Addr {
 		return socks5.ParseAddrToSocksAddr(udpAddr)
 	}
 
+	// A wildcard UDP listener must not reply with 0.0.0.0/[::] as the SOCKS5
+	// relay address. The accepted TCP control connection already tells us which
+	// concrete local address the client reached, so reuse that IP for the UDP
+	// ASSOCIATE reply. If the TCP side is still unspecified, fail the UDP path
+	// instead of advertising an unusable relay address.
 	tcpAddr, ok := conn.LocalAddr().(*net.TCPAddr)
 	if !ok || tcpAddr == nil || tcpAddr.IP == nil || tcpAddr.IP.IsUnspecified() {
 		return nil

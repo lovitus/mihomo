@@ -118,6 +118,7 @@ func router(isDebug bool, secret string, dohServer string, cors Cors) *chi.Mux {
 			return r
 		}())
 	}
+	addPublicExternalRouters(r)
 	r.Group(func(r chi.Router) {
 		if secret != "" {
 			r.Use(authentication(secret))
