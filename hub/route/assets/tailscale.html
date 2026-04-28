@@ -198,6 +198,8 @@
     .peer-expiry { color: var(--yellow); font-size: 10px; font-weight: 600; margin-left: 4px; white-space: nowrap; }
     .peer-expiry.bad { color: var(--red); }
     .peer-tag-shared { background: var(--yellow-bg); color: var(--yellow); }
+    /* Routes column hidden when unused */
+    .routes-hidden th:nth-child(5), .routes-hidden td:nth-child(5) { display: none; }
     /* Offline row dim */
     tr.peer-offline td { opacity: 0.6; }
     tr.peer-offline:hover td { opacity: 1; }
@@ -370,11 +372,11 @@
         <span id="peer-count" class="badge"></span>
       </div>
       <div class="table-wrap">
-        <table>
+        <table id="peers-table">
           <thead>
             <tr>
               <th data-col="name">Name</th>
-              <th>IPs</th>
+              <th data-col="ip">IPs</th>
               <th data-col="os">OS</th>
               <th data-col="state">State</th>
               <th>Routes</th>
@@ -604,6 +606,13 @@
       return p.curAddr ? 'direct' : (p.relay || '—');
     }
 
+    function ipSortKey(ip) {
+      if (!ip) return -1;
+      const v4 = ip.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+      if (v4) return ((+v4[1] * 256 + +v4[2]) * 256 + +v4[3]) * 256 + +v4[4];
+      return Number.MAX_SAFE_INTEGER;
+    }
+
     function sortIPs(ips) {
       return (ips || []).slice().sort((a, b) => {
         const a4 = !a.includes(':'), b4 = !b.includes(':');
@@ -616,7 +625,8 @@
       const q = $('search').value.trim().toLowerCase();
       let peers = ((state.status && state.status.peers) || []).filter(p => {
         if (!q) return true;
-        return [p.hostName, p.dnsName, p.os, ...(p.tailscaleIPs || []), ...(p.primaryRoutes || [])].join(' ').toLowerCase().includes(q);
+        const stateLabel = p.online ? (p.active ? 'active' : 'online') : (p.expired ? 'expired' : 'offline');
+        return [p.hostName, p.dnsName, p.os, stateLabel, ...(p.tailscaleIPs || []), ...(p.primaryRoutes || []), ...(p.tags || [])].join(' ').toLowerCase().includes(q);
       });
 
       const { col, dir } = state.sort;
@@ -624,6 +634,7 @@
         let av, bv;
         switch (col) {
           case 'name':  av = (a.hostName || '').toLowerCase(); bv = (b.hostName || '').toLowerCase(); break;
+          case 'ip':    av = ipSortKey(sortIPs(a.tailscaleIPs)[0]); bv = ipSortKey(sortIPs(b.tailscaleIPs)[0]); break;
           case 'os':    av = (a.os || '').toLowerCase();       bv = (b.os || '').toLowerCase();       break;
           case 'state': av = peerStateOrder(a);                bv = peerStateOrder(b);                break;
           case 'relay': av = peerRelay(a).toLowerCase();       bv = peerRelay(b).toLowerCase();       break;
@@ -633,6 +644,9 @@
         }
         return av < bv ? -dir : av > bv ? dir : 0;
       });
+
+      const hasRoutes = peers.some(p => (p.primaryRoutes || []).length > 0);
+      $('peers-table').classList.toggle('routes-hidden', !hasRoutes);
 
       document.querySelectorAll('th[data-col]').forEach(th => {
         th.classList.remove('sort-asc', 'sort-desc');
@@ -659,7 +673,7 @@
           <td>${esc(p.os || '—')}</td>
           <td><div class="online-cell"><span class="dot ${dotCls}"></span><span class="state-${stateLabel}">${esc(stateLabel)}</span>${exitBadge}</div></td>
           <td class="wrap" style="font-size:11px;color:var(--muted)">${esc((p.primaryRoutes || []).join(', ') || '—')}</td>
-          <td style="font-size:11px" class="${isDirect ? 'relay-direct' : 'muted'}" title="${esc(addrsTitle)}">${esc(relay)}</td>
+          <td style="font-size:11px" class="${isDirect ? 'relay-direct' : 'muted'}" title="${esc(addrsTitle)}">${isDirect ? `direct<br><span style="font-size:10px;font-weight:400;opacity:.8">${esc(p.curAddr)}</span>` : esc(relay)}</td>
           <td class="mono">${fmtBytes(p.rxBytes)} / ${fmtBytes(p.txBytes)}</td>
           <td style="font-size:11px;color:var(--muted)">${esc(fmtTimeRel(lastActive))}</td>
         </tr>`;
