@@ -46,6 +46,7 @@ const (
 
 const (
 	meshRetryBaseInterval        = 10 * time.Second
+	meshRetryMaxInterval         = 5 * time.Minute
 	startupGracePeriod           = 60 * time.Second
 	tailnetSocksHandshakeTimeout = 10 * time.Second
 	tailnetSocksMaxActiveConns   = 1024
@@ -53,6 +54,8 @@ const (
 	gatewayUDPMaxSessions        = 4096
 	gatewayLogInterval           = 30 * time.Second
 	tsnetLogBufferSize           = 64
+	tailIPRetryAttempts          = 3
+	tailIPRetryInterval          = 500 * time.Millisecond
 )
 
 type Snapshot struct {
@@ -295,6 +298,7 @@ type runtime struct {
 	gatewayListenTCPFn    func(addr string) (net.Listener, error)
 	gatewayListenUDPFn    func(addr string) (net.PacketConn, error)
 	gatewayUDPTimeout     time.Duration
+	gatewayRetryInterval  time.Duration
 
 	statusFn func(ctx context.Context) (*ipnstate.Status, error)
 	logs     *logRing
@@ -396,12 +400,9 @@ func (r *runtime) waitForRunning(ctx context.Context) (*ipnstate.Status, error) 
 
 		switch *n.State {
 		case ipn.Running:
-			status, err := lc.Status(ctx)
+			status, err := r.waitForTailIP(ctx, lc)
 			if err != nil {
-				return nil, fmt.Errorf("status: %w", err)
-			}
-			if len(status.TailscaleIPs) == 0 {
-				return nil, errors.New("running, but no tail IP")
+				return nil, err
 			}
 			if err := lc.SetServeConfig(ctx, new(ipn.ServeConfig)); err != nil {
 				return nil, fmt.Errorf("clear stale serve config: %w", err)
@@ -415,6 +416,30 @@ func (r *runtime) waitForRunning(ctx context.Context) (*ipnstate.Status, error) 
 			r.setPendingState(StateRegistering, "connecting")
 		}
 	}
+}
+
+func (r *runtime) waitForTailIP(ctx context.Context, lc interface {
+	Status(context.Context) (*ipnstate.Status, error)
+}) (*ipnstate.Status, error) {
+	for attempt := 0; attempt < tailIPRetryAttempts; attempt++ {
+		status, err := lc.Status(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("status: %w", err)
+		}
+		if len(status.TailscaleIPs) > 0 {
+			return status, nil
+		}
+		if attempt < tailIPRetryAttempts-1 {
+			timer := time.NewTimer(tailIPRetryInterval)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, ctx.Err()
+			case <-timer.C:
+			}
+		}
+	}
+	return nil, errors.New("running, but no tail IP after retries")
 }
 
 func (r *runtime) setAuthURL(authURL string) {
@@ -634,8 +659,11 @@ func (r *retryBackoff) shouldRetry(now time.Time) bool {
 func (r *retryBackoff) onFailure(now time.Time) time.Duration {
 	if r.delay <= 0 {
 		r.delay = meshRetryBaseInterval
-	} else if r.delay <= (time.Duration(1<<62))/2 {
+	} else {
 		r.delay *= 2
+		if r.delay > meshRetryMaxInterval {
+			r.delay = meshRetryMaxInterval
+		}
 	}
 	r.next = now.Add(r.delay)
 	return r.delay
@@ -928,15 +956,6 @@ func stableNodeName(stateDir string) (string, error) {
 		return "", err
 	}
 	return "mihomo-" + id[:8], nil
-}
-
-func userLogf(format string, args ...any) {
-	msg := fmt.Sprintf(format, args...)
-	if authURL, ok := authURLFromTsnetUserLog(msg); ok {
-		logAuthURLOnce(authURL)
-		return
-	}
-	log.Infoln("[Tailscale] %s", msg)
 }
 
 func (r *runtime) userLogf(format string, args ...any) {

@@ -6,256 +6,384 @@
   <title>tsnet status</title>
   <style>
     :root {
-      color-scheme: light;
-      --bg: #f7f8fa;
+      --bg: #f6f8fa;
       --panel: #ffffff;
-      --line: #e5e7eb;
-      --text: #1f2937;
-      --muted: #6b7280;
-      --soft: #f3f4f6;
-      --accent: #16a34a;
-      --danger: #dc2626;
+      --line: #d0d7de;
+      --text: #1f2328;
+      --muted: #656d76;
+      --soft: #eaeef2;
+      --green: #1a7f37;
+      --green-bg: #dafbe1;
+      --red: #d1242f;
+      --red-bg: #ffebe9;
+      --yellow: #9a6700;
+      --yellow-bg: #fff8c5;
+      --blue: #0969da;
+      --blue-bg: #ddf4ff;
+      --gray-bg: #eaeef2;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       background: var(--bg);
       color: var(--text);
-      font: 13px/1.45 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font: 13px/1.5 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
     }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
     main {
-      width: min(1240px, calc(100% - 24px));
+      width: min(1280px, calc(100% - 32px));
       margin: 0 auto;
-      padding: 14px 0 24px;
+      padding: 20px 0 40px;
     }
-    h1, h2, p { margin: 0; }
-    h1 { font-size: 20px; line-height: 1.2; }
-    h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+    h1, h2 { margin: 0; }
+    h1 { font-size: 17px; font-weight: 700; }
+    h2 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+    p { margin: 0; }
     button, input {
-      height: 32px;
+      height: 28px;
       border: 1px solid var(--line);
-      border-radius: 8px;
+      border-radius: 6px;
       padding: 0 10px;
       font: inherit;
+      font-size: 12px;
       background: var(--panel);
       color: var(--text);
+      cursor: pointer;
     }
-    button { cursor: pointer; font-weight: 600; }
-    button.primary { background: var(--text); color: #fff; border-color: var(--text); }
-    button:hover, input:focus { background: var(--soft); outline: none; }
-    button.primary:hover { background: #111827; }
+    button:hover { background: var(--soft); }
+    input { cursor: text; }
+    input:focus { outline: 2px solid var(--blue); outline-offset: -1px; }
+    button.primary { background: #1f883d; color: #fff; border-color: #1a7f37; font-weight: 600; }
+    button.primary:hover { background: #1a7f37; }
     .muted { color: var(--muted); }
     .hidden { display: none !important; }
-    .error { color: var(--danger); font-weight: 600; }
+    .mb { margin-bottom: 10px; }
+
+    /* Topbar */
     .topbar {
       display: flex;
+      align-items: center;
       justify-content: space-between;
       gap: 12px;
-      align-items: center;
-      margin-bottom: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
     }
-    .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
-    .toolbar input { min-width: 220px; }
-    .section {
+    .topbar-left { display: flex; align-items: center; gap: 10px; }
+    .topbar-right { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .topbar-right input { width: 180px; }
+
+    /* Badge */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      height: 22px;
+      padding: 0 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      background: var(--gray-bg);
+      color: var(--muted);
+    }
+    .badge::before {
+      content: '';
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      flex-shrink: 0;
+    }
+    .badge.ok { background: var(--green-bg); color: var(--green); }
+    .badge.bad { background: var(--red-bg); color: var(--red); }
+    .badge.warn { background: var(--yellow-bg); color: var(--yellow); }
+    .badge.info { background: var(--blue-bg); color: var(--blue); }
+
+    /* Alerts */
+    .alert {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      margin-bottom: 10px;
+      font-size: 13px;
+      border: 1px solid var(--line);
+    }
+    .alert-title { font-weight: 700; margin-bottom: 2px; }
+    .alert.warn { background: var(--yellow-bg); color: var(--yellow); border-color: var(--yellow); }
+    .alert.bad { background: var(--red-bg); color: var(--red); border-color: var(--red); }
+    .alert.info { background: var(--blue-bg); color: var(--blue); border-color: var(--blue); }
+    .auth-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+    .auth-row a { font-family: ui-monospace, "SF Mono", monospace; font-size: 11px; word-break: break-all; }
+
+    /* Card */
+    .card {
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 10px;
-      margin-bottom: 10px;
+      border-radius: 8px;
       overflow: hidden;
     }
-    .section-head {
+    .card-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 10px;
-      padding: 9px 12px;
+      padding: 9px 14px;
       border-bottom: 1px solid var(--line);
-      background: #fbfbfc;
     }
-    .summary {
+    .card-body { padding: 10px 14px; }
+
+    /* Layout grids */
+    .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
+    .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
+
+    /* KV items */
+    .kv { display: flex; flex-direction: column; gap: 1px; padding: 3px 0; }
+    .kv-label { font-size: 11px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+    .kv-value { font-size: 13px; overflow-wrap: anywhere; }
+    .kv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 16px; }
+
+    /* Self node */
+    .self-body { display: flex; align-items: flex-start; gap: 24px; flex-wrap: wrap; }
+    .self-main { flex: 1; min-width: 200px; }
+    .self-name { font-size: 16px; font-weight: 700; margin-bottom: 2px; }
+    .self-ips { font-family: ui-monospace, "SF Mono", monospace; font-size: 12px; color: var(--muted); }
+    .self-meta { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 10px; }
+    .self-meta-item { display: flex; flex-direction: column; gap: 1px; }
+
+    /* Service card */
+    .svc-status { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }
+    .svc-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+    .svc-dot.on { background: var(--green); }
+    .svc-dot.partial { background: var(--yellow); }
+    .svc-name { font-size: 14px; font-weight: 600; }
+    .svc-row { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); padding: 1px 0; }
+
+    /* Peers table */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { padding: 7px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+    th { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); background: var(--soft); white-space: nowrap; }
+    td { white-space: nowrap; }
+    td.wrap { white-space: normal; min-width: 140px; }
+    td.mono { font-family: ui-monospace, "SF Mono", monospace; font-size: 11px; }
+    tr:last-child td { border-bottom: 0; }
+    tbody tr:hover td { background: var(--soft); }
+    .peer-name { font-weight: 600; }
+    .peer-dns { font-size: 11px; color: var(--muted); margin-top: 1px; }
+    .online-cell { display: flex; align-items: center; gap: 5px; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+    .dot.on { background: var(--green); }
+    .dot.active { animation: pulse 1.4s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+    /* Logs */
+    .logs { margin: 0; padding: 0; list-style: none; max-height: 300px; overflow-y: auto; }
+    .log-item {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 10px;
-      margin-bottom: 10px;
-    }
-    .summary .section { margin-bottom: 0; }
-    .body { padding: 8px 12px; }
-    .kv {
-      display: grid;
-      grid-template-columns: 104px minmax(0, 1fr);
-      gap: 10px;
-      padding: 4px 0;
-    }
-    .kv strong { color: var(--muted); font-weight: 500; }
-    .kv span { overflow-wrap: anywhere; }
-    .pill {
-      display: inline-flex;
-      align-items: center;
-      height: 24px;
-      padding: 0 8px;
-      border-radius: 999px;
-      background: #dcfce7;
-      color: #15803d;
-      font-weight: 700;
+      grid-template-columns: 90px 90px minmax(0, 1fr);
+      gap: 12px;
+      padding: 6px 14px;
+      border-bottom: 1px solid var(--line);
+      align-items: baseline;
       font-size: 12px;
     }
-    .pill.bad { background: #fee2e2; color: var(--danger); }
-    .table-wrap { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td {
-      padding: 8px 10px;
-      border-bottom: 1px solid var(--line);
-      text-align: left;
-      vertical-align: top;
-      white-space: nowrap;
-    }
-    th { color: var(--muted); font-weight: 600; background: #fbfbfc; }
-    td.wrap { white-space: normal; min-width: 220px; }
-    tr:last-child td { border-bottom: 0; }
-    .state-dot {
-      display: inline-block;
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--accent);
-      margin-right: 6px;
-    }
-    .state-dot.off { background: #9ca3af; }
-    .logs {
-      margin: 0;
-      padding: 0;
+    .log-item:last-child { border-bottom: 0; }
+    .log-time { color: var(--muted); font-family: ui-monospace, "SF Mono", monospace; white-space: nowrap; }
+    .log-event { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .log-event.error { color: var(--red); }
+    .log-event.warn { color: var(--yellow); }
+    .log-event.info { color: var(--blue); }
+    .log-event.debug { color: var(--muted); }
+    .log-msg { overflow-wrap: anywhere; }
+
+    /* Diagnostic collapsible */
+    details summary {
+      cursor: pointer;
+      padding: 9px 14px;
+      user-select: none;
+      color: var(--muted);
+      font-size: 12px;
       list-style: none;
-      max-height: 280px;
-      overflow: auto;
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
-    .logs li {
-      display: grid;
-      grid-template-columns: 180px 140px minmax(0, 1fr);
-      gap: 10px;
-      padding: 7px 10px;
-      border-bottom: 1px solid var(--line);
-    }
-    .logs li:last-child { border-bottom: 0; }
-    .logs strong { font-weight: 600; }
-    .login-wrap {
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      padding: 16px;
-    }
-    .login {
-      width: min(420px, 100%);
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 16px;
-    }
-    .login form {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 8px;
-      margin-top: 12px;
-    }
-    .login input { width: 100%; min-width: 0; }
-    @media (max-width: 820px) {
-      main { width: min(100% - 16px, 1240px); padding-top: 10px; }
-      .topbar { align-items: flex-start; flex-direction: column; }
-      .toolbar { width: 100%; justify-content: flex-start; }
-      .toolbar input { width: 100%; min-width: 0; }
-      .summary { grid-template-columns: 1fr; }
-      .logs li { grid-template-columns: 1fr; gap: 2px; }
-      .kv { grid-template-columns: 88px minmax(0, 1fr); }
+    details summary::-webkit-details-marker { display: none; }
+    details summary::before { content: '▶'; font-size: 9px; transition: transform .15s; }
+    details[open] summary::before { transform: rotate(90deg); }
+    details[open] .card-body { border-top: 1px solid var(--line); }
+
+    /* Auto-refresh dot */
+    .auto-live { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--green); margin-right: 4px; animation: pulse 1s infinite; vertical-align: middle; }
+
+    /* Login */
+    .login-wrap { min-height: 100vh; display: grid; place-items: center; padding: 20px; }
+    .login-card { width: min(360px, 100%); }
+    .login-body { display: flex; flex-direction: column; gap: 14px; }
+    .login-title { font-size: 17px; font-weight: 700; }
+    .login-form { display: flex; gap: 8px; }
+    .login-form input { flex: 1; min-width: 0; height: 32px; }
+    .login-form button { height: 32px; white-space: nowrap; }
+
+    @media (max-width: 768px) {
+      main { width: calc(100% - 24px); padding: 14px 0 24px; }
+      .topbar { flex-direction: column; align-items: flex-start; }
+      .topbar-right { width: 100%; }
+      .topbar-right input { width: 100%; flex: 1; }
+      .grid-3 { grid-template-columns: 1fr; }
+      .grid-2 { grid-template-columns: 1fr; }
+      .self-body { flex-direction: column; }
+      .log-item { grid-template-columns: 1fr; gap: 2px; }
     }
   </style>
 </head>
 <body>
+
+  <!-- Login -->
   <section id="login" class="login-wrap hidden">
-    <div class="login">
-      <h1>tsnet status</h1>
-      <p class="muted">Enter the controller secret to read protected Tailscale status APIs.</p>
-      <form id="login-form">
-        <input id="token" type="password" autocomplete="current-password" placeholder="Controller secret">
-        <button type="submit" class="primary">Unlock</button>
-      </form>
-      <p id="login-error" class="error hidden">Authentication failed.</p>
+    <div class="card login-card">
+      <div class="card-body login-body">
+        <div>
+          <div class="login-title">tsnet status</div>
+          <p class="muted" style="margin-top:4px;font-size:12px">Enter your controller secret to continue.</p>
+        </div>
+        <form id="login-form" class="login-form">
+          <input id="token" type="password" autocomplete="current-password" placeholder="Controller secret">
+          <button type="submit" class="primary">Unlock</button>
+        </form>
+        <p id="login-error" class="hidden" style="color:var(--red);font-size:12px">Incorrect secret, try again.</p>
+      </div>
     </div>
   </section>
 
+  <!-- App -->
   <main id="app" class="hidden">
+
     <header class="topbar">
-      <div>
-        <h1>tsnet status</h1>
-        <p id="subtitle" class="muted">Read-only runtime view.</p>
+      <div class="topbar-left">
+        <h1>tsnet</h1>
+        <span id="state-badge" class="badge">loading</span>
       </div>
-      <div class="toolbar">
-        <input id="search" type="search" placeholder="Filter peers">
-        <button id="refresh" type="button" class="primary">Refresh</button>
-        <button id="auto" type="button">Auto: off</button>
-        <button id="logout" type="button">Lock page</button>
+      <div class="topbar-right">
+        <input id="search" type="search" placeholder="Filter peers…">
+        <button id="refresh" type="button" class="primary">↺ Refresh</button>
+        <button id="auto" type="button">Auto</button>
+        <button id="logout" type="button">Lock</button>
       </div>
     </header>
 
-    <div class="summary">
-      <section class="section" id="runtime">
-        <div class="section-head">
-          <h2>Runtime</h2>
-          <span id="state" class="pill">loading</span>
+    <!-- Dynamic alerts (health, errors) -->
+    <div id="alerts"></div>
+
+    <!-- Auth URL alert -->
+    <div id="auth-alert" class="alert info hidden">
+      <div style="flex:1">
+        <div class="alert-title">Authentication required</div>
+        <p style="font-size:12px;margin-top:2px">Open the URL below to authenticate this node with Tailscale.</p>
+        <div class="auth-row">
+          <a id="auth-link" href="#" target="_blank" rel="noopener noreferrer"></a>
+          <button id="copy-auth" type="button">Copy URL</button>
         </div>
-        <div id="runtime-body" class="body"></div>
-        <p id="status-error" class="error hidden body"></p>
-      </section>
-      <section class="section">
-        <div class="section-head"><h2>Services</h2></div>
-        <div id="services" class="body"></div>
-      </section>
-      <section class="section" id="tailnet">
-        <div class="section-head"><h2>Tailnet</h2></div>
-        <div id="tailnet-body" class="body"></div>
-      </section>
+      </div>
     </div>
 
-    <section class="section">
-      <div class="section-head">
-        <h2 id="peer-title">Peers</h2>
+    <!-- This node -->
+    <div id="self-section" class="card mb hidden">
+      <div class="card-head">
+        <h2>This node</h2>
+        <span id="self-backend" class="muted" style="font-size:11px"></span>
+      </div>
+      <div class="card-body self-body">
+        <div class="self-main">
+          <div class="self-name" id="self-name">—</div>
+          <div class="self-ips" id="self-ips"></div>
+          <div class="self-meta" id="self-meta"></div>
+        </div>
+        <div id="self-traffic" style="text-align:right;white-space:nowrap">
+          <div class="kv-label">Rx / Tx</div>
+          <div style="font-family:ui-monospace,'SF Mono',monospace;font-size:13px" id="self-traffic-val"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Services -->
+    <div class="grid-3">
+      <div class="card">
+        <div class="card-head"><h2>Mesh</h2></div>
+        <div class="card-body" id="svc-mesh"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Gateway</h2></div>
+        <div class="card-body" id="svc-gateway"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Controller</h2></div>
+        <div class="card-body" id="svc-controller"></div>
+      </div>
+    </div>
+
+    <!-- Tailnet + Diagnostic -->
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-head"><h2>Tailnet</h2></div>
+        <div class="card-body kv-grid" id="tailnet-body"></div>
+      </div>
+      <div class="card">
+        <details>
+          <summary>Diagnostic</summary>
+          <div class="card-body kv-grid" id="diag-body"></div>
+        </details>
+      </div>
+    </div>
+
+    <!-- Peers -->
+    <div class="card mb">
+      <div class="card-head">
+        <h2>Peers</h2>
+        <span id="peer-count" class="badge"></span>
       </div>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
               <th>Name</th>
-              <th>DNS</th>
               <th>IPs</th>
-              <th>Allowed IPs</th>
-              <th>Routes</th>
               <th>OS</th>
               <th>State</th>
-              <th>Rx/Tx</th>
+              <th>Routes</th>
+              <th>Relay</th>
+              <th>Rx / Tx</th>
               <th>Last Seen</th>
-              <th>Handshake</th>
             </tr>
           </thead>
           <tbody id="peers"></tbody>
         </table>
       </div>
-    </section>
+    </div>
 
-    <section class="section">
-      <div class="section-head">
+    <!-- Logs -->
+    <div class="card">
+      <div class="card-head">
         <h2 id="log-title">Logs</h2>
       </div>
       <ul id="logs" class="logs"></ul>
-    </section>
+    </div>
+
   </main>
 
   <script>
     const tokenKey = 'mihomo-controller-token';
-    const state = { status: null, logs: [], auto: null };
+    const state = { status: null, logs: [], timer: null };
     const $ = (id) => document.getElementById(id);
     const token = () => sessionStorage.getItem(tokenKey) || '';
-    const headers = () => token() ? { Authorization: `Bearer ${token()}` } : {};
+    const authHeaders = () => token() ? { Authorization: `Bearer ${token()}` } : {};
 
     async function api(path) {
-      const res = await fetch(path, { headers: headers(), cache: 'no-store' });
+      const res = await fetch(path, { headers: authHeaders(), cache: 'no-store' });
       if (res.status === 401) throw new Error('unauthorized');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.json();
@@ -274,148 +402,256 @@
 
     async function load() {
       try {
-        const [status, logs] = await Promise.all([api('/tailscale'), api('/tailscale/logs')]);
+        const [status, logsResp] = await Promise.all([api('/tailscale'), api('/tailscale/logs')]);
         state.status = status;
-        state.logs = logs.logs || [];
+        state.logs = logsResp.logs || [];
         showApp();
         render();
       } catch (err) {
         if (err.message === 'unauthorized') showLogin(true);
-        else {
-          showApp();
-          $('status-error').textContent = err.message;
-          $('status-error').classList.remove('hidden');
-        }
+        else { showApp(); setAlert('load-error', 'bad', 'Failed to load status', err.message); }
       }
     }
 
-    function kv(label, value) {
-      return `<div class="kv"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(value || '-')}</span></div>`;
+    function setAlert(id, type, title, body) {
+      let el = document.getElementById('alert-' + id);
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'alert-' + id;
+        $('alerts').appendChild(el);
+      }
+      el.className = `alert ${type}`;
+      el.innerHTML = `<div><div class="alert-title">${esc(title)}</div>${body ? `<div style="font-size:12px;margin-top:2px">${esc(body)}</div>` : ''}</div>`;
+    }
+
+    function clearAlert(id) {
+      document.getElementById('alert-' + id)?.remove();
     }
 
     function render() {
       const s = state.status || {};
-      const peers = s.peers || [];
-      $('subtitle').textContent = s.nodeName ? `${s.nodeName} · ${new Date().toLocaleTimeString()}` : 'Read-only runtime view.';
-      $('peer-title').textContent = `Peers (${peers.length})`;
-      $('log-title').textContent = `Logs (${state.logs.length})`;
-      $('state').textContent = s.ready ? 'ready' : (s.state || 'not ready');
-      $('state').classList.toggle('bad', !s.ready);
-      $('status-error').textContent = s.statusError || '';
-      $('status-error').classList.toggle('hidden', !s.statusError);
+
+      /* State badge */
+      const badge = $('state-badge');
+      badge.textContent = s.state || 'unknown';
+      badge.className = 'badge ' + (s.ready ? 'ok' : s.enable === false ? '' : 'bad');
+
+      /* Status error */
+      if (s.statusError) setAlert('status', 'bad', 'Status error', s.statusError);
+      else clearAlert('status');
+
+      /* Health alerts */
+      const oldHealthEls = [...$('alerts').querySelectorAll('[id^="alert-health-"]')];
+      const newIds = new Set((s.health || []).map((msg, i) => {
+        setAlert('health-' + i, 'warn', 'Health warning', msg);
+        return 'alert-health-' + i;
+      }));
+      oldHealthEls.forEach(el => { if (!newIds.has(el.id)) el.remove(); });
+
+      /* Auth URL */
       const authLink = s['auth' + 'URL'];
-      $('runtime-body').innerHTML = [
-        kv('Enabled', String(Boolean(s.enable))),
-        kv('State', s.state),
-        kv('Node', s.nodeName),
-        kv('Backend', s.backendState),
-        kv('Tail IPs', (s.tailIPs || []).join(', ')),
-        authLink ? '<div class="kv"><strong>Auth URL</strong><span><button id="copy-auth" type="button">Copy</button></span></div>' : ''
-      ].join('');
-      const copyAuth = $('copy-auth');
-      if (copyAuth) copyAuth.addEventListener('click', () => copyText(authLink));
-      const svc = s.services || {};
-      $('services').innerHTML = [
-        kv('Mesh', serviceText(svc.mesh)),
-        kv('Gateway', serviceText(svc.gateway)),
-        kv('Controller', serviceText(svc.controller))
-      ].join('');
-      const tailnet = s.tailnet || {};
+      if (authLink) {
+        $('auth-link').href = authLink;
+        $('auth-link').textContent = authLink;
+        $('auth-alert').classList.remove('hidden');
+      } else {
+        $('auth-alert').classList.add('hidden');
+      }
+
+      /* Self node */
+      const self = s.self;
+      if (self) {
+        $('self-section').classList.remove('hidden');
+        $('self-name').textContent = self.hostName || self.dnsName || '—';
+        $('self-ips').textContent = (self.tailscaleIPs || []).join('  ');
+        $('self-backend').textContent = s.backendState || '';
+        const metaItems = [
+          { label: 'OS', value: self.os },
+          { label: 'Relay', value: self.relay || (self.curAddr ? 'direct' : null) },
+          { label: 'Cur addr', value: self.curAddr },
+          self.keyExpiry ? { label: 'Key expiry', value: fmtTime(self.keyExpiry) } : null,
+        ].filter(Boolean).filter(m => m.value);
+        $('self-meta').innerHTML = metaItems.map(m =>
+          `<div class="self-meta-item"><div class="kv-label">${esc(m.label)}</div><div>${esc(m.value)}</div></div>`
+        ).join('');
+        const hasTraffic = self.rxBytes || self.txBytes;
+        $('self-traffic').classList.toggle('hidden', !hasTraffic);
+        $('self-traffic-val').textContent = `${fmtBytes(self.rxBytes)} / ${fmtBytes(self.txBytes)}`;
+      } else {
+        $('self-section').classList.add('hidden');
+      }
+
+      /* Services */
+      renderSvc('svc-mesh', s.services && s.services.mesh, [
+        s.services && s.services.mesh && s.services.mesh.socks5Port ? `SOCKS5 :${s.services.mesh.socks5Port}` : null,
+        s.services && s.services.mesh && s.services.mesh.activeConnections ? `${s.services.mesh.activeConnections} active conn` : null,
+      ]);
+      renderSvc('svc-gateway', s.services && s.services.gateway, [
+        s.services && s.services.gateway && s.services.gateway.address || null,
+        s.services && s.services.gateway && s.services.gateway.udpSessions ? `${s.services.gateway.udpSessions} UDP sessions` : null,
+      ]);
+      renderSvc('svc-controller', s.services && s.services.controller, [
+        s.services && s.services.controller && s.services.controller.address || null,
+      ]);
+
+      /* Tailnet */
+      const tn = s.tailnet || {};
       $('tailnet-body').innerHTML = [
-        kv('Name', tailnet.name),
-        kv('MagicDNS', tailnet.magicDNSSuffix),
-        kv('Enabled', tailnet.magicDNSEnabled === undefined ? '-' : String(tailnet.magicDNSEnabled))
+        kvItem('Name', tn.name),
+        kvItem('MagicDNS suffix', tn.magicDNSSuffix),
+        kvItem('MagicDNS', tn.magicDNSEnabled === undefined ? '—' : tn.magicDNSEnabled ? 'enabled' : 'disabled'),
+        kvItem('Node key', s.haveNodeKey ? 'present' : 'none'),
       ].join('');
+
+      /* Diagnostic */
+      const d = s.diagnostic || {};
+      $('diag-body').innerHTML = [
+        kvItem('State dir', d['state' + 'Dir']),
+        kvItem('State file', d.stateFile),
+        kvItem('File exists', d.exists ? 'yes' : 'no'),
+        kvItem('File size', d.size ? fmtBytes(d.size) : '—'),
+        kvItem('Modified', fmtTime(d.mtime)),
+        kvItem('Readable', d.storeReadable ? 'yes' : 'no'),
+        kvItem('Has state', d.hasState ? 'yes' : 'no'),
+      ].join('');
+
+      /* Peers count badge */
+      const peers = s.peers || [];
+      const onlineCount = peers.filter(p => p.online).length;
+      $('peer-count').textContent = `${onlineCount} online / ${peers.length} total`;
+      $('peer-count').className = 'badge ' + (peers.length === 0 ? '' : onlineCount > 0 ? 'ok' : 'bad');
+
+      /* Logs title */
+      $('log-title').textContent = `Logs (${state.logs.length})`;
+
       renderPeers();
-      $('logs').innerHTML = state.logs.length ? state.logs.slice().reverse().map((log) =>
-        `<li><span>${escapeHtml(formatTime(log.time))}</span><strong>${escapeHtml(log.event || log.level || 'log')}</strong><span>${escapeHtml(log.message || '')}</span></li>`
-      ).join('') : '<li><span>No tsnet logs.</span></li>';
+      renderLogs();
+    }
+
+    function renderSvc(id, svc, extras) {
+      const el = $(id);
+      if (!svc) {
+        el.innerHTML = '<div class="muted" style="font-size:12px">Not configured</div>';
+        return;
+      }
+      const hasTCP = svc.tcpReady !== undefined;
+      const hasUDP = svc.udpReady !== undefined;
+      const hasReady = svc.ready !== undefined;
+      const isOn = svc.enabled && (hasTCP ? svc.tcpReady : hasReady ? svc.ready : false);
+      const isPartial = svc.enabled && !isOn;
+      const dotClass = isOn ? 'on' : isPartial ? 'partial' : '';
+      const label = !svc.enabled ? 'Disabled' : isOn ? 'Ready' : 'Not ready';
+      const rows = [
+        hasTCP ? ['TCP', svc.tcpReady ? 'ready' : 'not ready'] : null,
+        hasUDP ? ['UDP', svc.udpReady ? 'ready' : 'not ready'] : null,
+        (!hasTCP && hasReady) ? ['Status', svc.ready ? 'ready' : 'not ready'] : null,
+        ...(extras || []).filter(Boolean).map(e => [null, e]),
+      ].filter(Boolean);
+      el.innerHTML = `<div class="svc-status"><span class="svc-dot ${dotClass}"></span><span class="svc-name">${label}</span></div>` +
+        rows.map(([k, v]) => k
+          ? `<div class="svc-row"><span>${esc(k)}</span><span>${esc(v)}</span></div>`
+          : `<div style="font-size:11px;color:var(--muted);padding:1px 0">${esc(v)}</div>`
+        ).join('');
     }
 
     function renderPeers() {
       const q = $('search').value.trim().toLowerCase();
-      const peers = (state.status && state.status.peers || []).filter((p) => {
-        const haystack = [p.hostName, p.dnsName, p.os, ...(p.tailscaleIPs || []), ...(p.allowedIPs || []), ...(p.primaryRoutes || [])].join(' ').toLowerCase();
-        return !q || haystack.includes(q);
+      const peers = ((state.status && state.status.peers) || []).filter(p => {
+        if (!q) return true;
+        return [p.hostName, p.dnsName, p.os, ...(p.tailscaleIPs || []), ...(p.primaryRoutes || [])].join(' ').toLowerCase().includes(q);
       });
-      $('peers').innerHTML = peers.length ? peers.map((p) => {
-        const stateText = `${p.online ? 'online' : 'offline'}${p.active ? ' · active' : ''}${p.expired ? ' · expired' : ''}`;
+      $('peers').innerHTML = peers.length ? peers.map(p => {
+        const dotCls = p.online ? (p.active ? 'on active' : 'on') : '';
+        const stateLabel = p.online ? (p.active ? 'active' : 'online') : (p.expired ? 'expired' : 'offline');
+        const relay = p.relay || (p.curAddr ? 'direct' : '—');
         return `<tr>
-          <td>${escapeHtml(p.hostName || p.publicKey || '-')}</td>
-          <td class="wrap">${escapeHtml(p.dnsName || '-')}</td>
-          <td class="wrap">${escapeHtml((p.tailscaleIPs || []).join(', ') || '-')}</td>
-          <td class="wrap">${escapeHtml((p.allowedIPs || []).join(', ') || '-')}</td>
-          <td class="wrap">${escapeHtml((p.primaryRoutes || []).join(', ') || '-')}</td>
-          <td>${escapeHtml(p.os || '-')}</td>
-          <td><span class="state-dot ${p.online ? '' : 'off'}"></span>${escapeHtml(stateText)}</td>
-          <td>${formatBytes(p.rxBytes)} / ${formatBytes(p.txBytes)}</td>
-          <td>${escapeHtml(formatTime(p.lastSeen))}</td>
-          <td>${escapeHtml(formatTime(p.lastHandshake))}</td>
+          <td><div class="peer-name">${esc(p.hostName || '—')}</div>${p.dnsName ? `<div class="peer-dns">${esc(p.dnsName)}</div>` : ''}</td>
+          <td class="mono wrap">${esc((p.tailscaleIPs || []).join('\n') || '—')}</td>
+          <td>${esc(p.os || '—')}</td>
+          <td><div class="online-cell"><span class="dot ${dotCls}"></span>${esc(stateLabel)}</div></td>
+          <td class="wrap" style="font-size:11px;color:var(--muted)">${esc((p.primaryRoutes || []).join(', ') || '—')}</td>
+          <td style="font-size:11px;color:var(--muted)">${esc(relay)}</td>
+          <td class="mono">${fmtBytes(p.rxBytes)} / ${fmtBytes(p.txBytes)}</td>
+          <td style="font-size:11px;color:var(--muted)">${esc(fmtTimeRel(p.lastSeen))}</td>
         </tr>`;
-      }).join('') : '<tr><td colspan="10" class="muted">No peers.</td></tr>';
+      }).join('') : `<tr><td colspan="8" class="muted" style="text-align:center;padding:20px">No peers${q ? ' matching filter' : ''}</td></tr>`;
     }
 
-    function serviceText(svc) {
-      if (!svc) return '-';
-      const flags = [];
-      if (svc.enabled) flags.push('enabled');
-      if (svc.ready || svc.tcpReady) flags.push('ready');
-      if (svc.udpReady) flags.push('udp');
-      if (svc.socks5Port) flags.push(`:${svc.socks5Port}`);
-      if (svc.address) flags.push(svc.address);
-      if (svc.activeConnections) flags.push(`${svc.activeConnections} conns`);
-      if (svc.udpSessions) flags.push(`${svc.udpSessions} udp`);
-      return flags.join(' · ') || 'disabled';
+    function renderLogs() {
+      const logs = state.logs.slice().reverse();
+      $('logs').innerHTML = logs.length ? logs.map(log => {
+        const level = (log.level || '').toLowerCase();
+        const event = log.event || log.level || 'log';
+        const evtClass = ['error', 'warn', 'info', 'debug'].includes(level) ? level : '';
+        return `<li class="log-item">
+          <span class="log-time">${esc(fmtTimeShort(log.time))}</span>
+          <span class="log-event ${evtClass}">${esc(event)}</span>
+          <span class="log-msg">${esc(log.message || '')}</span>
+        </li>`;
+      }).join('') : '<li class="log-item"><span class="log-time muted">—</span><span></span><span class="muted">No logs yet</span></li>';
     }
 
-    function formatBytes(value) {
+    function kvItem(label, value) {
+      return `<div class="kv"><div class="kv-label">${esc(label)}</div><div class="kv-value">${esc(value == null ? '—' : value)}</div></div>`;
+    }
+
+    function fmtBytes(value) {
       if (!value) return '0 B';
-      const units = ['B', 'KB', 'MB', 'GB'];
-      let n = Number(value);
-      let i = 0;
-      while (n >= 1024 && i < units.length - 1) {
-        n /= 1024;
-        i++;
-      }
+      const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+      let n = Number(value), i = 0;
+      while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
       return `${n.toFixed(i ? 1 : 0)} ${units[i]}`;
     }
 
-    function formatTime(value) {
-      if (!value) return '-';
+    function fmtTime(value) {
+      if (!value) return '—';
       const d = new Date(value);
-      if (Number.isNaN(d.getTime())) return value;
-      return d.toLocaleString();
+      return isNaN(d) ? String(value) : d.toLocaleString();
     }
 
-    function escapeHtml(value) {
-      return String(value ?? '').replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+    function fmtTimeShort(value) {
+      if (!value) return '—';
+      const d = new Date(value);
+      if (isNaN(d)) return String(value);
+      return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     }
 
-    async function copyText(value) {
-      await navigator.clipboard.writeText(value);
+    function fmtTimeRel(value) {
+      if (!value) return '—';
+      const d = new Date(value);
+      if (isNaN(d)) return String(value);
+      const sec = Math.floor((Date.now() - d) / 1000);
+      if (sec < 5) return 'just now';
+      if (sec < 60) return `${sec}s ago`;
+      if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+      if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
+      return d.toLocaleDateString();
     }
 
-    $('login-form').addEventListener('submit', (event) => {
-      event.preventDefault();
+    function esc(value) {
+      return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+    }
+
+    $('login-form').addEventListener('submit', e => {
+      e.preventDefault();
       sessionStorage.setItem(tokenKey, $('token').value);
       load();
     });
     $('refresh').addEventListener('click', load);
-    $('logout').addEventListener('click', () => {
-      sessionStorage.removeItem(tokenKey);
-      showLogin(false);
-    });
+    $('logout').addEventListener('click', () => { sessionStorage.removeItem(tokenKey); showLogin(false); });
     $('search').addEventListener('input', renderPeers);
+    $('copy-auth').addEventListener('click', () => { navigator.clipboard.writeText($('auth-link').href).catch(() => {}); });
     $('auto').addEventListener('click', () => {
-      if (state.auto) {
-        clearInterval(state.auto);
-        state.auto = null;
-        $('auto').textContent = 'Auto: off';
+      if (state.timer) {
+        clearInterval(state.timer);
+        state.timer = null;
+        $('auto').innerHTML = 'Auto';
       } else {
-        state.auto = setInterval(load, 5000);
-        $('auto').textContent = 'Auto: 5s';
+        state.timer = setInterval(load, 5000);
+        $('auto').innerHTML = '<span class="auto-live"></span>5s';
       }
     });
+
     load();
   </script>
 </body>
