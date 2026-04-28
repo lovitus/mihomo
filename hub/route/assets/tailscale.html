@@ -177,8 +177,30 @@
     .online-cell { display: flex; align-items: center; gap: 5px; }
     .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
     .dot.on { background: var(--green); }
+    .dot.off { background: var(--red); }
     .dot.active { animation: pulse 1.4s infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+    /* Sortable headers */
+    th[data-col] { cursor: pointer; user-select: none; }
+    th[data-col]:hover { color: var(--text); }
+    th.sort-asc::after { content: ' ▲'; font-size: 9px; opacity: .7; }
+    th.sort-desc::after { content: ' ▼'; font-size: 9px; opacity: .7; }
+    /* Peer state labels */
+    .state-active { color: var(--green); font-weight: 600; }
+    .state-offline { color: var(--red); }
+    .state-expired { color: var(--muted); font-style: italic; }
+    /* Direct connection */
+    .relay-direct { color: var(--green); font-weight: 600; }
+    /* Peer tags */
+    .peer-tag { display: inline-block; padding: 0 4px; border-radius: 3px; font-size: 10px; background: var(--blue-bg); color: var(--blue); margin: 1px 1px 0 0; font-family: ui-monospace, "SF Mono", monospace; }
+    .peer-exit { display: inline-block; padding: 0 4px; border-radius: 3px; font-size: 10px; background: var(--green-bg); color: var(--green); font-weight: 600; margin-left: 4px; vertical-align: middle; }
+    .peer-exit-opt { display: inline-block; padding: 0 4px; border-radius: 3px; font-size: 10px; background: var(--gray-bg); color: var(--muted); margin-left: 4px; vertical-align: middle; }
+    .peer-expiry { color: var(--yellow); font-size: 10px; font-weight: 600; margin-left: 4px; white-space: nowrap; }
+    .peer-expiry.bad { color: var(--red); }
+    .peer-tag-shared { background: var(--yellow-bg); color: var(--yellow); }
+    /* Offline row dim */
+    tr.peer-offline td { opacity: 0.6; }
+    tr.peer-offline:hover td { opacity: 1; }
 
     /* Logs */
     .logs { margin: 0; padding: 0; list-style: none; max-height: 300px; overflow-y: auto; }
@@ -267,6 +289,7 @@
       <div class="topbar-left">
         <h1>tsnet</h1>
         <span id="state-badge" class="badge">loading</span>
+        <span id="last-refresh" class="muted" style="font-size:11px"></span>
       </div>
       <div class="topbar-right">
         <input id="search" type="search" placeholder="Filter peers…">
@@ -350,14 +373,14 @@
         <table>
           <thead>
             <tr>
-              <th>Name</th>
+              <th data-col="name">Name</th>
               <th>IPs</th>
-              <th>OS</th>
-              <th>State</th>
+              <th data-col="os">OS</th>
+              <th data-col="state">State</th>
               <th>Routes</th>
-              <th>Relay</th>
+              <th data-col="relay">Relay</th>
               <th>Rx / Tx</th>
-              <th>Last Seen</th>
+              <th data-col="seen">Last Active</th>
             </tr>
           </thead>
           <tbody id="peers"></tbody>
@@ -377,7 +400,7 @@
 
   <script>
     const tokenKey = 'mihomo-controller-token';
-    const state = { status: null, logs: [], timer: null };
+    const state = { status: null, logs: [], timer: null, sort: { col: 'state', dir: -1 }, lastRefresh: null };
     const $ = (id) => document.getElementById(id);
     const token = () => sessionStorage.getItem(tokenKey) || '';
     const authHeaders = () => token() ? { Authorization: `Bearer ${token()}` } : {};
@@ -405,6 +428,7 @@
         const [status, logsResp] = await Promise.all([api('/tailscale'), api('/tailscale/logs')]);
         state.status = status;
         state.logs = logsResp.logs || [];
+        state.lastRefresh = Date.now();
         showApp();
         render();
       } catch (err) {
@@ -463,12 +487,12 @@
       if (self) {
         $('self-section').classList.remove('hidden');
         $('self-name').textContent = self.hostName || self.dnsName || '—';
-        $('self-ips').textContent = (self.tailscaleIPs || []).join('  ');
+        $('self-ips').textContent = sortIPs(self.tailscaleIPs).join('  ');
         $('self-backend').textContent = s.backendState || '';
         const metaItems = [
           { label: 'OS', value: self.os },
-          { label: 'Relay', value: self.relay || (self.curAddr ? 'direct' : null) },
-          { label: 'Cur addr', value: self.curAddr },
+          self.curAddr ? { label: 'Direct addr', value: self.curAddr } : null,
+          { label: 'Relay', value: self.relay || null },
           self.keyExpiry ? { label: 'Key expiry', value: fmtTime(self.keyExpiry) } : null,
         ].filter(Boolean).filter(m => m.value);
         $('self-meta').innerHTML = metaItems.map(m =>
@@ -506,6 +530,7 @@
       /* Diagnostic */
       const d = s.diagnostic || {};
       $('diag-body').innerHTML = [
+        kvItem('Daemon version', s.daemonVersion),
         kvItem('State dir', d['state' + 'Dir']),
         kvItem('State file', d.stateFile),
         kvItem('File exists', d.exists ? 'yes' : 'no'),
@@ -518,8 +543,14 @@
       /* Peers count badge */
       const peers = s.peers || [];
       const onlineCount = peers.filter(p => p.online).length;
-      $('peer-count').textContent = `${onlineCount} online / ${peers.length} total`;
+      const directCount = peers.filter(p => p.curAddr).length;
+      $('peer-count').textContent = directCount > 0
+        ? `${onlineCount} online (${directCount} direct) / ${peers.length} total`
+        : `${onlineCount} online / ${peers.length} total`;
       $('peer-count').className = 'badge ' + (peers.length === 0 ? '' : onlineCount > 0 ? 'ok' : 'bad');
+
+      /* Last refresh */
+      if (state.lastRefresh) $('last-refresh').textContent = `Updated ${new Date(state.lastRefresh).toLocaleTimeString()}`;
 
       /* Logs title */
       $('log-title').textContent = `Logs (${state.logs.length})`;
@@ -554,25 +585,83 @@
         ).join('');
     }
 
+    function peerExpiryBadge(p) {
+      if (p.expired || !p.keyExpiry) return '';
+      const days = (new Date(p.keyExpiry) - Date.now()) / 86400000;
+      if (days > 7) return '';
+      if (days <= 0) return '<span class="peer-expiry bad">key expired</span>';
+      return `<span class="peer-expiry">⚠️ ${Math.ceil(days)}d</span>`;
+    }
+
+    function peerStateOrder(p) {
+      if (p.expired) return 0;
+      if (!p.online) return 1;
+      if (!p.active) return 2;
+      return 3;
+    }
+
+    function peerRelay(p) {
+      return p.curAddr ? 'direct' : (p.relay || '—');
+    }
+
+    function sortIPs(ips) {
+      return (ips || []).slice().sort((a, b) => {
+        const a4 = !a.includes(':'), b4 = !b.includes(':');
+        if (a4 !== b4) return a4 ? -1 : 1;
+        return a < b ? -1 : a > b ? 1 : 0;
+      });
+    }
+
     function renderPeers() {
       const q = $('search').value.trim().toLowerCase();
-      const peers = ((state.status && state.status.peers) || []).filter(p => {
+      let peers = ((state.status && state.status.peers) || []).filter(p => {
         if (!q) return true;
         return [p.hostName, p.dnsName, p.os, ...(p.tailscaleIPs || []), ...(p.primaryRoutes || [])].join(' ').toLowerCase().includes(q);
       });
+
+      const { col, dir } = state.sort;
+      peers = peers.slice().sort((a, b) => {
+        let av, bv;
+        switch (col) {
+          case 'name':  av = (a.hostName || '').toLowerCase(); bv = (b.hostName || '').toLowerCase(); break;
+          case 'os':    av = (a.os || '').toLowerCase();       bv = (b.os || '').toLowerCase();       break;
+          case 'state': av = peerStateOrder(a);                bv = peerStateOrder(b);                break;
+          case 'relay': av = peerRelay(a).toLowerCase();       bv = peerRelay(b).toLowerCase();       break;
+          case 'seen':  av = new Date(a.online ? a.lastHandshake : a.lastSeen).getTime() || 0;
+                    bv = new Date(b.online ? b.lastHandshake : b.lastSeen).getTime() || 0; break;
+          default: return 0;
+        }
+        return av < bv ? -dir : av > bv ? dir : 0;
+      });
+
+      document.querySelectorAll('th[data-col]').forEach(th => {
+        th.classList.remove('sort-asc', 'sort-desc');
+        if (th.dataset.col === col) th.classList.add(dir === 1 ? 'sort-asc' : 'sort-desc');
+      });
+
       $('peers').innerHTML = peers.length ? peers.map(p => {
-        const dotCls = p.online ? (p.active ? 'on active' : 'on') : '';
+        const dotCls = p.online ? (p.active ? 'on active' : 'on') : 'off';
         const stateLabel = p.online ? (p.active ? 'active' : 'online') : (p.expired ? 'expired' : 'offline');
-        const relay = p.relay || (p.curAddr ? 'direct' : '—');
-        return `<tr>
-          <td><div class="peer-name">${esc(p.hostName || '—')}</div>${p.dnsName ? `<div class="peer-dns">${esc(p.dnsName)}</div>` : ''}</td>
-          <td class="mono wrap">${esc((p.tailscaleIPs || []).join('\n') || '—')}</td>
+        const relay = peerRelay(p);
+        const isDirect = relay === 'direct';
+        const ips = sortIPs(p.tailscaleIPs);
+        const tagHtml = [
+          p.shareeNode ? '<span class="peer-tag peer-tag-shared">shared</span>' : '',
+          ...(p.tags || []).map(t => `<span class="peer-tag">${esc(t.replace(/^tag:/, ''))}</span>`),
+        ].filter(Boolean).join('');
+        const exitBadge = p.exitNode ? '<span class="peer-exit">exit</span>' : (p.exitNodeOption ? '<span class="peer-exit-opt">exit?</span>' : '');
+        const expiryBadge = peerExpiryBadge(p);
+        const lastActive = p.online ? (p.lastWrite || p.lastHandshake) : p.lastSeen;
+        const addrsTitle = (p.addrs || []).join('\n');
+        return `<tr class="${p.online ? '' : 'peer-offline'}">
+          <td><div class="peer-name">${esc(p.hostName || '—')}${expiryBadge}</div>${p.dnsName ? `<div class="peer-dns">${esc(p.dnsName)}</div>` : ''}${tagHtml ? `<div style="margin-top:2px">${tagHtml}</div>` : ''}</td>
+          <td class="mono wrap">${esc(ips.join('\n') || '—')}</td>
           <td>${esc(p.os || '—')}</td>
-          <td><div class="online-cell"><span class="dot ${dotCls}"></span>${esc(stateLabel)}</div></td>
+          <td><div class="online-cell"><span class="dot ${dotCls}"></span><span class="state-${stateLabel}">${esc(stateLabel)}</span>${exitBadge}</div></td>
           <td class="wrap" style="font-size:11px;color:var(--muted)">${esc((p.primaryRoutes || []).join(', ') || '—')}</td>
-          <td style="font-size:11px;color:var(--muted)">${esc(relay)}</td>
+          <td style="font-size:11px" class="${isDirect ? 'relay-direct' : 'muted'}" title="${esc(addrsTitle)}">${esc(relay)}</td>
           <td class="mono">${fmtBytes(p.rxBytes)} / ${fmtBytes(p.txBytes)}</td>
-          <td style="font-size:11px;color:var(--muted)">${esc(fmtTimeRel(p.lastSeen))}</td>
+          <td style="font-size:11px;color:var(--muted)">${esc(fmtTimeRel(lastActive))}</td>
         </tr>`;
       }).join('') : `<tr><td colspan="8" class="muted" style="text-align:center;padding:20px">No peers${q ? ' matching filter' : ''}</td></tr>`;
     }
@@ -640,6 +729,18 @@
     $('refresh').addEventListener('click', load);
     $('logout').addEventListener('click', () => { sessionStorage.removeItem(tokenKey); showLogin(false); });
     $('search').addEventListener('input', renderPeers);
+    document.querySelectorAll('th[data-col]').forEach(th => {
+      th.addEventListener('click', () => {
+        const col = th.dataset.col;
+        if (state.sort.col === col) {
+          state.sort.dir = -state.sort.dir;
+        } else {
+          state.sort.col = col;
+          state.sort.dir = col === 'state' ? -1 : 1;
+        }
+        renderPeers();
+      });
+    });
     $('copy-auth').addEventListener('click', () => { navigator.clipboard.writeText($('auth-link').href).catch(() => {}); });
     $('auto').addEventListener('click', () => {
       if (state.timer) {

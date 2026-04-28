@@ -395,6 +395,9 @@ Web page behavior:
 
 - The page is intentionally read-only. It does not restart tsnet, reauthorize the node, change config, or write logs to disk.
 - It displays runtime state, self node details, service readiness, peers, recent in-memory logs, and diagnostic details.
+- It includes the live Tailscale daemon/library version when available from `LocalClient.Status(ctx)`.
+- Peer rows can be filtered and sorted by name, OS, state, relay path, and last activity.
+- Peer display includes direct-vs-relay connection state, tags, exit-node markers, near-expiry key hints, sorted tail IPs, and last refresh time.
 - Auth URLs are available only after API authentication and can be copied from the page.
 - Local diagnostic paths are kept in a diagnostic section and are not embedded in the static HTML shell.
 - Responses use `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, and `Referrer-Policy: no-referrer`.
@@ -455,5 +458,5 @@ Release workflow:
 Recommended release tag for this feature branch:
 
 ```text
-v2026.04.28-persistent-pin.18-tsnet
+v2026.04.28-persistent-pin.19-tsnet
 ```
