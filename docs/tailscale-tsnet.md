@@ -362,9 +362,42 @@ Runtime errors that disable only the subfeature:
 
 Retry behavior:
 
+- Backend `Running` status is allowed a short tail-IP assignment grace: status is retried up to 3 times with a `500ms` interval before startup is considered failed.
 - Mesh TCP/UDP listener retry is on-use, not timer-driven.
-- Retry delay uses exponential backoff from `10s`.
+- Mesh retry delay uses exponential backoff from `10s` and caps at `5m`.
+- Gateway TCP listen failures are retried in the background with the same bounded exponential backoff. This handles transient host port conflicts without requiring a mihomo reload.
 - This avoids mobile or low-power devices waking periodically just to retry listeners.
+
+## Read-only Status API And Web Page
+
+The controller exposes a read-only tsnet status surface:
+
+- `GET /tailscale`
+- `GET /tailscale/logs`
+- `GET /tailscale/web`
+
+Authentication:
+
+- `/tailscale` and `/tailscale/logs` reuse the existing controller Bearer secret.
+- If the controller secret is empty, the API behaves like other unprotected controller routes and returns data directly.
+- `/tailscale/web` is public, but it is only a static HTML/CSS/JS shell. Runtime data is fetched from the protected API after the user enters the controller secret.
+- The page stores the entered secret only in browser `sessionStorage`; there is no server-side session or cookie.
+
+Status API behavior:
+
+- The status endpoint combines the in-memory runtime snapshot with a best-effort `LocalClient.Status(ctx)` query.
+- Handlers use a short request-derived timeout so a blocked tsnet local client does not hang the controller.
+- If the live status query fails, the endpoint still returns HTTP `200` with the runtime snapshot and a `statusError` field.
+- When tsnet is disabled or the runtime is absent, the endpoint returns the minimal disabled state: `enable=false`, `state=disabled`, `ready=false`.
+- Logs are kept in memory only. Disabled/runtime-nil state returns an empty log list instead of `404` or `500`.
+
+Web page behavior:
+
+- The page is intentionally read-only. It does not restart tsnet, reauthorize the node, change config, or write logs to disk.
+- It displays runtime state, self node details, service readiness, peers, recent in-memory logs, and diagnostic details.
+- Auth URLs are available only after API authentication and can be copied from the page.
+- Local diagnostic paths are kept in a diagnostic section and are not embedded in the static HTML shell.
+- Responses use `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, and `Referrer-Policy: no-referrer`.
 
 ## Files And Packages
 
@@ -422,5 +455,5 @@ Release workflow:
 Recommended release tag for this feature branch:
 
 ```text
-v2026.04.24-persistent-pin.16-tsnet
+v2026.04.28-persistent-pin.18-tsnet
 ```

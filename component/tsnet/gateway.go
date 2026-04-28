@@ -73,10 +73,45 @@ func (r *runtime) startGateway() {
 
 	ln, err := r.gatewayListenTCP(addr)
 	if err != nil {
-		log.Warnln("[Tailscale] gateway-socks5 tcp listen failed addr=%s err=%v", addr, err)
+		log.Warnln("[Tailscale] gateway-socks5 tcp listen failed addr=%s err=%v; will retry", addr, err)
+		go r.retryGatewayTCPListen(addr)
 		return
 	}
+	r.setupGateway(addr, ln)
+}
 
+func (r *runtime) retryGatewayTCPListen(addr string) {
+	base := r.gatewayRetryInterval
+	if base <= 0 {
+		base = meshRetryBaseInterval
+	}
+	delay := base
+	for {
+		timer := time.NewTimer(delay)
+		select {
+		case <-r.cancelCtx:
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+		if r.closed.Load() {
+			return
+		}
+		ln, err := r.gatewayListenTCP(addr)
+		if err != nil {
+			log.Warnln("[Tailscale] gateway-socks5 tcp retry failed addr=%s err=%v; next retry in %s", addr, err, delay.Round(time.Second))
+			delay *= 2
+			if delay > meshRetryMaxInterval {
+				delay = meshRetryMaxInterval
+			}
+			continue
+		}
+		r.setupGateway(addr, ln)
+		return
+	}
+}
+
+func (r *runtime) setupGateway(addr string, ln net.Listener) {
 	var udpConn net.PacketConn
 	if pc, err := r.gatewayListenUDP(addr); err != nil {
 		log.Warnln("[Tailscale] gateway-socks5 udp listen failed addr=%s err=%v", addr, err)

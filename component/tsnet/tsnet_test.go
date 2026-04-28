@@ -472,6 +472,212 @@ func TestGatewayHandleUDPPacketDropsNewSessionOverCapButKeepsExisting(t *testing
 	}
 }
 
+func TestRetryBackoffFirstDelayIsBase(t *testing.T) {
+	var rb retryBackoff
+	got := rb.onFailure(time.Now())
+	if got != meshRetryBaseInterval {
+		t.Fatalf("first backoff delay = %s, want %s", got, meshRetryBaseInterval)
+	}
+}
+
+func TestRetryBackoffCapsAtMaxInterval(t *testing.T) {
+	var rb retryBackoff
+	now := time.Now()
+	for i := 0; i < 30; i++ {
+		got := rb.onFailure(now)
+		if got > meshRetryMaxInterval {
+			t.Fatalf("backoff exceeded max after %d failures: got %s, want <= %s", i+1, got, meshRetryMaxInterval)
+		}
+	}
+	if rb.delay != meshRetryMaxInterval {
+		t.Fatalf("backoff did not saturate at max: got %s, want %s", rb.delay, meshRetryMaxInterval)
+	}
+}
+
+func TestRetryBackoffShouldRetryBeforeAndAfterDelay(t *testing.T) {
+	var rb retryBackoff
+	now := time.Now()
+	if !rb.shouldRetry(now) {
+		t.Fatal("fresh backoff should always allow retry")
+	}
+	delay := rb.onFailure(now)
+	if rb.shouldRetry(now) {
+		t.Fatal("shouldRetry should be false immediately after failure")
+	}
+	if !rb.shouldRetry(now.Add(delay)) {
+		t.Fatal("shouldRetry should be true once delay elapses")
+	}
+}
+
+func TestRetryBackoffResetOnSuccess(t *testing.T) {
+	var rb retryBackoff
+	now := time.Now()
+	rb.onFailure(now)
+	rb.onFailure(now)
+	rb.onSuccess()
+	if rb.delay != 0 {
+		t.Fatalf("delay not reset after success: %s", rb.delay)
+	}
+	if !rb.next.IsZero() {
+		t.Fatalf("next not reset after success: %v", rb.next)
+	}
+	if !rb.shouldRetry(now) {
+		t.Fatal("after reset, shouldRetry should be true immediately")
+	}
+}
+
+func TestGatewayTCPListenRetriesAfterFailure(t *testing.T) {
+	rt := newGatewayTestRuntime()
+	var listenCalls atomic.Int32
+	ready := make(chan net.Listener, 1)
+	rt.gatewayListenTCPFn = func(addr string) (net.Listener, error) {
+		if listenCalls.Add(1) == 1 {
+			return nil, errors.New("port in use")
+		}
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return nil, err
+		}
+		ready <- ln
+		return ln, nil
+	}
+	rt.gatewayListenUDPFn = func(addr string) (net.PacketConn, error) {
+		return nil, errors.New("udp disabled in test")
+	}
+	go rt.retryGatewayTCPListen("127.0.0.1:0")
+	select {
+	case ln := <-ready:
+		ln.Close()
+	case <-time.After(time.Second):
+		t.Fatal("gateway TCP listener was not started after retry")
+	}
+	if listenCalls.Load() < 2 {
+		t.Fatalf("listen calls = %d, want >= 2", listenCalls.Load())
+	}
+}
+
+func TestGatewayTCPListenRetryStopsOnClose(t *testing.T) {
+	rt := newGatewayTestRuntime()
+	rt.gatewayListenTCPFn = func(addr string) (net.Listener, error) {
+		return nil, errors.New("always fails")
+	}
+	done := make(chan struct{})
+	go func() {
+		rt.retryGatewayTCPListen("127.0.0.1:0")
+		close(done)
+	}()
+	rt.Close()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("retry goroutine did not stop after Close")
+	}
+}
+
+type fakeLCStatus struct {
+	calls   atomic.Int32
+	results []*ipnstate.Status
+	err     error
+	onCall  func(int)
+}
+
+func (f *fakeLCStatus) Status(_ context.Context) (*ipnstate.Status, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	n := int(f.calls.Add(1)) - 1
+	if f.onCall != nil {
+		f.onCall(n)
+	}
+	if n >= len(f.results) {
+		n = len(f.results) - 1
+	}
+	return f.results[n], nil
+}
+
+func TestWaitForTailIPSucceedsOnFirstCall(t *testing.T) {
+	rt := &runtime{}
+	lc := &fakeLCStatus{results: []*ipnstate.Status{
+		{TailscaleIPs: []netip.Addr{netip.MustParseAddr("100.64.0.1")}},
+	}}
+	status, err := rt.waitForTailIP(context.Background(), lc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(status.TailscaleIPs) == 0 {
+		t.Fatal("expected tail IPs, got none")
+	}
+	if lc.calls.Load() != 1 {
+		t.Fatalf("Status called %d times, want 1", lc.calls.Load())
+	}
+}
+
+func TestWaitForTailIPSucceedsOnRetry(t *testing.T) {
+	rt := &runtime{}
+	lc := &fakeLCStatus{results: []*ipnstate.Status{
+		{TailscaleIPs: nil},
+		{TailscaleIPs: []netip.Addr{netip.MustParseAddr("100.64.0.2")}},
+	}}
+	status, err := rt.waitForTailIP(context.Background(), lc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(status.TailscaleIPs) == 0 {
+		t.Fatal("expected tail IPs, got none")
+	}
+	if lc.calls.Load() < 2 {
+		t.Fatalf("Status called %d times, want >= 2", lc.calls.Load())
+	}
+}
+
+func TestWaitForTailIPFailsAfterAllRetries(t *testing.T) {
+	rt := &runtime{}
+	empty := &ipnstate.Status{TailscaleIPs: nil}
+	lc := &fakeLCStatus{results: []*ipnstate.Status{empty, empty, empty}}
+	_, err := rt.waitForTailIP(context.Background(), lc)
+	if err == nil {
+		t.Fatal("expected error after all retries, got nil")
+	}
+	if int(lc.calls.Load()) != tailIPRetryAttempts {
+		t.Fatalf("Status called %d times, want %d", lc.calls.Load(), tailIPRetryAttempts)
+	}
+}
+
+func TestWaitForTailIPCancelExitsEarly(t *testing.T) {
+	rt := &runtime{}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	lc := &fakeLCStatus{err: ctx.Err()}
+	_, err := rt.waitForTailIP(ctx, lc)
+	if err == nil {
+		t.Fatal("expected error on cancelled ctx, got nil")
+	}
+}
+
+func TestWaitForTailIPCancelWhileWaitingForRetry(t *testing.T) {
+	rt := &runtime{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	lc := &fakeLCStatus{
+		results: []*ipnstate.Status{
+			{TailscaleIPs: nil},
+			{TailscaleIPs: []netip.Addr{netip.MustParseAddr("100.64.0.2")}},
+		},
+		onCall: func(n int) {
+			if n == 0 {
+				cancel()
+			}
+		},
+	}
+	_, err := rt.waitForTailIP(ctx, lc)
+	if err == nil {
+		t.Fatal("expected cancellation while waiting for retry, got nil")
+	}
+	if lc.calls.Load() != 1 {
+		t.Fatalf("Status called %d times, want 1", lc.calls.Load())
+	}
+}
+
 func TestGatewayStartSkippedWhenGatewaySocks5Empty(t *testing.T) {
 	resetTsnetTestState(t)
 	rt := newClosedRunTestRuntime()
@@ -942,6 +1148,7 @@ func newGatewayTestRuntime() *runtime {
 		gatewayUDPConn:        nil,
 		gatewayListenTCPFn:    nil,
 		gatewayListenUDPFn:    nil,
+		gatewayRetryInterval:  time.Millisecond,
 		gatewayDialTCPFn:      nil,
 		gatewayListenPacketFn: nil,
 	}
