@@ -12,21 +12,22 @@ import (
 )
 
 type APIStatus struct {
-	Enable       bool              `json:"enable"`
-	Ready        bool              `json:"ready"`
-	State        State             `json:"state"`
-	StatusError  string            `json:"statusError,omitempty"`
-	NodeName     string            `json:"nodeName,omitempty"`
-	AuthURL      string            `json:"authURL,omitempty"`
-	TailIPs      []string          `json:"tailIPs,omitempty"`
-	BackendState string            `json:"backendState,omitempty"`
-	HaveNodeKey  bool              `json:"haveNodeKey,omitempty"`
-	Health       []string          `json:"health,omitempty"`
-	Tailnet      *APITailnetStatus `json:"tailnet,omitempty"`
-	Self         *APIPeerStatus    `json:"self,omitempty"`
-	Peers        []APIPeerStatus   `json:"peers,omitempty"`
-	Services     *APIServices      `json:"services,omitempty"`
-	Diagnostic   *APIDiagnostic    `json:"diagnostic,omitempty"`
+	Enable        bool              `json:"enable"`
+	Ready         bool              `json:"ready"`
+	State         State             `json:"state"`
+	StatusError   string            `json:"statusError,omitempty"`
+	NodeName      string            `json:"nodeName,omitempty"`
+	AuthURL       string            `json:"authURL,omitempty"`
+	TailIPs       []string          `json:"tailIPs,omitempty"`
+	BackendState  string            `json:"backendState,omitempty"`
+	DaemonVersion string            `json:"daemonVersion,omitempty"`
+	HaveNodeKey   bool              `json:"haveNodeKey,omitempty"`
+	Health        []string          `json:"health,omitempty"`
+	Tailnet       *APITailnetStatus `json:"tailnet,omitempty"`
+	Self          *APIPeerStatus    `json:"self,omitempty"`
+	Peers         []APIPeerStatus   `json:"peers,omitempty"`
+	Services      *APIServices      `json:"services,omitempty"`
+	Diagnostic    *APIDiagnostic    `json:"diagnostic,omitempty"`
 }
 
 type APITailnetStatus struct {
@@ -236,6 +237,7 @@ func mergeLocalStatus(st *APIStatus, status *ipnstate.Status) {
 		return
 	}
 	st.BackendState = status.BackendState
+	st.DaemonVersion = status.Version
 	st.HaveNodeKey = status.HaveNodeKey
 	st.AuthURL = firstNonEmpty(status.AuthURL, st.AuthURL)
 	st.TailIPs = addrsToStrings(status.TailscaleIPs)
