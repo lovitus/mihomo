@@ -489,7 +489,7 @@
       if (self) {
         $('self-section').classList.remove('hidden');
         $('self-name').textContent = self.hostName || self.dnsName || '—';
-        $('self-ips').textContent = sortIPs(self.tailscaleIPs).join('  ');
+        $('self-ips').innerHTML = sortIPs(s.tailIPs || self.tailscaleIPs).map(esc).join('<br>') || '—';
         $('self-backend').textContent = s.backendState || '';
         const metaItems = [
           { label: 'OS', value: self.os },
@@ -669,7 +669,7 @@
         const addrsTitle = (p.addrs || []).join('\n');
         return `<tr class="${p.online ? '' : 'peer-offline'}">
           <td><div class="peer-name">${esc(p.hostName || '—')}${expiryBadge}</div>${p.dnsName ? `<div class="peer-dns">${esc(p.dnsName)}</div>` : ''}${tagHtml ? `<div style="margin-top:2px">${tagHtml}</div>` : ''}</td>
-          <td class="mono wrap">${esc(ips.join('\n') || '—')}</td>
+          <td class="mono">${ips.length ? ips.map(esc).join('<br>') : '—'}</td>
           <td>${esc(p.os || '—')}</td>
           <td><div class="online-cell"><span class="dot ${dotCls}"></span><span class="state-${stateLabel}">${esc(stateLabel)}</span>${exitBadge}</div></td>
           <td class="wrap" style="font-size:11px;color:var(--muted)">${esc((p.primaryRoutes || []).join(', ') || '—')}</td>

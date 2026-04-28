@@ -284,7 +284,7 @@ func apiPeerStatus(peer *ipnstate.PeerStatus) *APIPeerStatus {
 		HostName:       peer.HostName,
 		DNSName:        peer.DNSName,
 		OS:             peer.OS,
-		TailscaleIPs:   addrsToStrings(peer.TailscaleIPs),
+		TailscaleIPs:   peerTailscaleIPs(peer),
 		Addrs:          append([]string(nil), peer.Addrs...),
 		CurAddr:        peer.CurAddr,
 		Relay:          peer.Relay,
@@ -311,6 +311,51 @@ func apiPeerStatus(peer *ipnstate.PeerStatus) *APIPeerStatus {
 	}
 	if peer.PrimaryRoutes != nil {
 		out.PrimaryRoutes = prefixesToStrings(peer.PrimaryRoutes.AsSlice())
+	}
+	return out
+}
+
+// peerTailscaleIPs returns the peer's Tailscale IPs, augmenting
+// peer.TailscaleIPs with any single-host prefixes found in peer.AllowedIPs
+// that are missing. This handles Headscale deployments using non-standard
+// IPv4 ranges (e.g. 10.x.x.x) which the Tailscale client filters out of
+// PeerStatus.TailscaleIPs via tsaddr.IsTailscaleIP.
+func peerTailscaleIPs(peer *ipnstate.PeerStatus) []string {
+	out := addrsToStrings(peer.TailscaleIPs)
+	if peer.AllowedIPs == nil {
+		return out
+	}
+	seen := make(map[netip.Addr]bool, len(peer.TailscaleIPs))
+	for _, a := range peer.TailscaleIPs {
+		seen[a] = true
+	}
+	// PrimaryRoutes contains advertised subnet routes (possibly single-host),
+	// explicitly excluding node addresses. Skip these so we don't treat a
+	// routed host prefix (e.g. 192.168.1.10/32) as the peer's own address.
+	skipPfx := make(map[netip.Prefix]bool)
+	if peer.PrimaryRoutes != nil {
+		for _, pfx := range peer.PrimaryRoutes.AsSlice() {
+			skipPfx[pfx] = true
+		}
+	}
+	var extra4 []string
+	for _, pfx := range peer.AllowedIPs.AsSlice() {
+		if !pfx.IsSingleIP() || skipPfx[pfx] {
+			continue
+		}
+		addr := pfx.Addr()
+		if seen[addr] {
+			continue
+		}
+		seen[addr] = true
+		if addr.Is4() {
+			extra4 = append(extra4, addr.String())
+		} else {
+			out = append(out, addr.String())
+		}
+	}
+	if len(extra4) > 0 {
+		out = append(extra4, out...) // IPv4 first
 	}
 	return out
 }
