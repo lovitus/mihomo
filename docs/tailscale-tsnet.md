@@ -390,6 +390,7 @@ Status API behavior:
 - If the live status query fails, the endpoint still returns HTTP `200` with the runtime snapshot and a `statusError` field.
 - When tsnet is disabled or the runtime is absent, the endpoint returns the minimal disabled state: `enable=false`, `state=disabled`, `ready=false`.
 - Logs are kept in memory only. Disabled/runtime-nil state returns an empty log list instead of `404` or `500`.
+- Peer `tailscaleIPs` primarily comes from `PeerStatus.TailscaleIPs`. For Headscale deployments using non-standard IPv4 node ranges that Tailscale filters out of `PeerStatus.TailscaleIPs`, single-host `AllowedIPs` are added back when they are not advertised primary routes.
 
 Web page behavior:
 
@@ -399,6 +400,7 @@ Web page behavior:
 - Peer rows can be filtered by host, DNS name, OS, state, tail IP, route, and tag.
 - Peer rows can be sorted by name, first tail IP, OS, state, relay path, and last activity.
 - Peer display includes direct-vs-relay connection state, direct address details, tags, exit-node markers, near-expiry key hints, sorted tail IPs, and last refresh time.
+- Self and peer IP lists are rendered one address per line for readability.
 - The Routes column is hidden when the current peer list has no advertised primary routes.
 - Auth URLs are available only after API authentication and can be copied from the page.
 - Local diagnostic paths are kept in a diagnostic section and are not embedded in the static HTML shell.
@@ -460,5 +462,5 @@ Release workflow:
 Recommended release tag for this feature branch:
 
 ```text
-v2026.04.28-persistent-pin.20-tsnet
+v2026.04.28-persistent-pin.21-tsnet
 ```
