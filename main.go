@@ -34,6 +34,7 @@ var (
 	version                bool
 	testConfig             bool
 	geodataMode            bool
+	tailscaleWizard        bool
 	homeDir                string
 	configFile             string
 	configString           string
@@ -61,6 +62,7 @@ func init() {
 	flag.BoolVar(&geodataMode, "m", false, "set geodata mode")
 	flag.BoolVar(&version, "v", false, "show current version of mihomo")
 	flag.BoolVar(&testConfig, "t", false, "test configuration and exit")
+	flag.BoolVar(&tailscaleWizard, "tailscale-wizard", false, "run Tailscale registration wizard and exit")
 	flag.Parse()
 }
 
@@ -95,6 +97,10 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "generate" {
 		generator.Main(os.Args[2:])
 		return
+	}
+
+	if tailscaleWizard {
+		os.Exit(tsnet.RunWizard(homeDir, configFile))
 	}
 
 	if version {
