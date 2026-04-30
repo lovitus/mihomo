@@ -171,6 +171,33 @@ Important state mapping:
 - `register-failed`: startup, local client, backend, or status watch failed.
 - `disabled`: config is off or runtime initialization could not safely start.
 
+## Registration Wizard
+
+For devices where normal logs are hard to inspect, such as OpenWrt services, mihomo provides a small one-shot registration helper:
+
+```bash
+mihomo -d /path/to/home -f /path/to/config.yaml -tailscale-wizard
+```
+
+Behavior:
+
+- Reads only `tailscale.login-server` and `tailscale.state-dir` from the YAML config.
+- Does not load rules, providers, geosite, geoip, proxies, listeners, or the full mihomo runtime.
+- Resolves relative `state-dir` against `-d`; if `-d` is omitted, it uses the normal mihomo home directory.
+- Defaults missing `tailscale.state-dir` to `tailscale`, matching normal config defaults.
+- Uses the same state-dir lock and stable node name as normal tsnet startup.
+- Prints state-file diagnostics before startup, including missing state or very small state files.
+- Starts a temporary `tsnet.Server`, prints the authorization URL when the control server provides one, and waits up to `2m` for the node to connect.
+- Exits `0` after the node is connected and a tail IP is visible.
+- Exits `1` for config errors, state-dir lock conflicts, startup errors, status watch errors, or timeout.
+
+Operational notes:
+
+- Stop the normal mihomo service before running the wizard against the same `state-dir`; the lock intentionally rejects concurrent use.
+- After successful authorization, start mihomo normally with the same `state-dir`.
+- The wizard is diagnostic and registration-only. It does not expose mesh SOCKS, gateway SOCKS, controller routes, proxy listeners, or Web UI.
+- The wizard still disables Tailscale logtail uploads and uses the same default-resolver lifecycle guard as the normal embedded tsnet runtime.
+
 ## Tailnet SOCKS5 Service
 
 When enabled:
@@ -462,5 +489,5 @@ Release workflow:
 Recommended release tag for this feature branch:
 
 ```text
-v2026.04.28-persistent-pin.21-tsnet
+v2026.04.30-persistent-pin.22-tsnet
 ```
