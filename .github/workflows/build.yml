@@ -165,7 +165,15 @@ jobs:
       if: ${{ matrix.jobs.goversion == '' }}
       run: |
         cd $(go env GOROOT)
-        patch --verbose -p 1 < $GITHUB_WORKSPACE/.github/patch/issue77930.patch
+        PATCH_FILE="$GITHUB_WORKSPACE/.github/patch/issue77930.patch"
+        if patch --dry-run --batch --forward -p 1 < "$PATCH_FILE"; then
+          patch --verbose --batch --forward -p 1 < "$PATCH_FILE"
+        elif patch --dry-run --batch -R -p 1 < "$PATCH_FILE"; then
+          echo "issue77930 patch is already present in this Go toolchain; skipping"
+        else
+          echo "::error::issue77930 patch can neither be applied nor detected as already present"
+          exit 1
+        fi
 
     - name: Set variables
       run: |
