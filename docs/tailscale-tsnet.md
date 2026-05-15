@@ -28,6 +28,9 @@ Minimum config:
 tailscale:
   enable: true
   login-server: https://hs.example.com
+  login-server-ip-fallbacks:
+    - http://192.0.2.10:8088
+    - http://[2001:db8::10]:8088
   state-dir: tailscale
   expose-controller: true
   mesh: true
@@ -40,6 +43,7 @@ Defaults:
 tailscale:
   enable: false
   login-server: ""
+  login-server-ip-fallbacks: []
   state-dir: tailscale
   expose-controller: false
   mesh: false
@@ -50,6 +54,7 @@ Field meanings:
 
 - `enable`: starts or stops the built-in `tsnet` subsystem.
 - `login-server`: Headscale or Tailscale control server URL. Required when `enable=true`.
+- `login-server-ip-fallbacks`: optional Headscale control-plane IP literal URLs. Only IPv4/IPv6 literals are accepted; domain names are rejected to avoid adding DNS fallback paths.
 - `state-dir`: persistent `tsnet` state directory. This is the node identity root.
 - `expose-controller`: exposes the existing ordinary `external-controller` on the tailnet.
 - `mesh`: exposes a standard SOCKS5 server on the tailnet.
@@ -163,6 +168,10 @@ Expected first-run flow:
 
 `login-server` hostnames are resolved by Tailscale's internal control-plane paths on a best-effort basis. If a hostname cannot be resolved or the control server cannot complete authorization within the 60-second startup grace period, `tsnet` is disabled for the current run without changing the normal mihomo DNS behavior.
 
+If `login-server-ip-fallbacks` is configured, mihomo probes IP literal candidates with `GET /key` before creating `tsnet.Server`. The first candidate returning HTTP 200 becomes the active control URL for this run. The probe does not use system DNS, mihomo DNS, environment proxies, or runtime rule/proxy chains. If all IP probes fail, mihomo falls back to the original `login-server` and the normal startup grace behavior.
+
+For `https://IP` fallbacks, the Headscale certificate must include the IP address in its SANs. mihomo does not rewrite Host or SNI.
+
 Important state mapping:
 
 - `unregistered`: local state exists but login or authorization is not complete.
@@ -181,7 +190,7 @@ mihomo -d /path/to/home -f /path/to/config.yaml -tailscale-wizard
 
 Behavior:
 
-- Reads only `tailscale.login-server` and `tailscale.state-dir` from the YAML config.
+- Reads only `tailscale.login-server`, `tailscale.login-server-ip-fallbacks`, and `tailscale.state-dir` from the YAML config.
 - Does not load rules, providers, geosite, geoip, proxies, listeners, or the full mihomo runtime.
 - Resolves relative `state-dir` against `-d`; if `-d` is omitted, it uses the normal mihomo home directory.
 - Defaults missing `tailscale.state-dir` to `tailscale`, matching normal config defaults.

@@ -85,16 +85,17 @@ type Dialer struct {
 }
 
 type Config struct {
-	Enable            bool
-	LoginServer       string
-	StateDir          string
-	ExposeController  bool
-	Mesh              bool
-	Socks5            int
-	GatewaySocks5     string
-	ControllerAddress string
-	ControllerHandler http.Handler
-	Tunnel            C.Tunnel
+	Enable                 bool
+	LoginServer            string
+	LoginServerIPFallbacks []string
+	StateDir               string
+	ExposeController       bool
+	Mesh                   bool
+	Socks5                 int
+	GatewaySocks5          string
+	ControllerAddress      string
+	ControllerHandler      http.Handler
+	Tunnel                 C.Tunnel
 }
 
 func (d *Dialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
@@ -166,12 +167,14 @@ func ApplyConfig(cfg Config) {
 	}
 
 	disableTailscaleBackgroundLogUploads()
-	logLoginServerNameResolution(cfg.LoginServer)
+	selection := selectLoginServer(context.Background(), cfg.LoginServer, cfg.LoginServerIPFallbacks, probeLoginServerKey)
+	logLoginServerSelection(selection)
+	logLoginServerNameResolution(selection.ActiveLoginServer)
 
 	server := &tsnetlib.Server{
 		Dir:        stateDir,
 		Hostname:   nodeName,
-		ControlURL: cfg.LoginServer,
+		ControlURL: selection.ActiveLoginServer,
 		Port:       0,
 	}
 	endResolverLifecycle := beginDefaultResolverLifecycle()
@@ -181,6 +184,7 @@ func ApplyConfig(cfg Config) {
 		cfg:                  cfg,
 		stateDir:             stateDir,
 		nodeName:             nodeName,
+		activeLoginServer:    selection.ActiveLoginServer,
 		state:                StateRegistering,
 		cancelCtx:            make(chan struct{}),
 		runDone:              make(chan struct{}),
@@ -246,11 +250,12 @@ type runtime struct {
 	lock   *dirLock
 	cfg    Config
 
-	stateDir string
-	nodeName string
-	state    State
-	authURL  string
-	tailIPs  []netip.Addr
+	stateDir          string
+	nodeName          string
+	activeLoginServer string
+	state             State
+	authURL           string
+	tailIPs           []netip.Addr
 
 	socks5Port int
 
@@ -331,7 +336,7 @@ func (r *runtime) run() {
 	default:
 	}
 
-	log.Infoln("[Tailscale] starting node=%s login-server=%s state-dir=%s", r.nodeName, r.cfg.LoginServer, r.stateDir)
+	log.Infoln("[Tailscale] starting node=%s login-server=%s state-dir=%s", r.nodeName, r.loginServerForRuntime(), r.stateDir)
 	r.logStateDiagnostic("before-server-start", "", nil)
 	if err := r.server.Start(); err != nil {
 		r.setState(StateRegisterFailed)
@@ -356,7 +361,7 @@ func (r *runtime) run() {
 			return
 		}
 		r.setState(StateRegisterFailed)
-		log.Warnln("[Tailscale] status=register-failed login-server=%s state-dir=%s node-name=%s reason=%s", r.cfg.LoginServer, r.stateDir, r.nodeName, err)
+		log.Warnln("[Tailscale] status=register-failed login-server=%s state-dir=%s node-name=%s reason=%s", r.loginServerForRuntime(), r.stateDir, r.nodeName, err)
 		r.logStateDiagnostic("register-failed", "", nil)
 		return
 	}
@@ -365,9 +370,16 @@ func (r *runtime) run() {
 		return
 	}
 
-	log.Infoln("[Tailscale] status=connected login-server=%s node-name=%s tail-ip=%s", r.cfg.LoginServer, r.nodeName, formatTailIPs(status.TailscaleIPs))
+	log.Infoln("[Tailscale] status=connected login-server=%s node-name=%s tail-ip=%s", r.loginServerForRuntime(), r.nodeName, formatTailIPs(status.TailscaleIPs))
 	r.logStateDiagnostic("connected", status.AuthURL, status)
 	r.startConnectedServices(status.TailscaleIPs)
+}
+
+func (r *runtime) loginServerForRuntime() string {
+	if r.activeLoginServer != "" {
+		return r.activeLoginServer
+	}
+	return r.cfg.LoginServer
 }
 
 func (r *runtime) waitForRunning(ctx context.Context) (*ipnstate.Status, error) {
@@ -556,10 +568,10 @@ func (r *runtime) setPendingState(state State, reason string) {
 
 	switch state {
 	case StateUnregistered:
-		log.Warnln("[Tailscale] status=unregistered login-server=%s state-dir=%s node-name=%s", r.cfg.LoginServer, r.stateDir, r.nodeName)
+		log.Warnln("[Tailscale] status=unregistered login-server=%s state-dir=%s node-name=%s", r.loginServerForRuntime(), r.stateDir, r.nodeName)
 		log.Warnln("[Tailscale] %s", reason)
 	case StateNeedsReauth:
-		log.Warnln("[Tailscale] status=needs-reauth login-server=%s state-dir=%s node-name=%s reason=%s", r.cfg.LoginServer, r.stateDir, r.nodeName, reason)
+		log.Warnln("[Tailscale] status=needs-reauth login-server=%s state-dir=%s node-name=%s reason=%s", r.loginServerForRuntime(), r.stateDir, r.nodeName, reason)
 		log.Warnln("[Tailscale] local state exists, but Headscale does not currently accept this node")
 	case StateRegistering:
 		log.Debugln("[Tailscale] status=registering node-name=%s reason=%s", r.nodeName, reason)
@@ -629,7 +641,7 @@ func (r *runtime) markUnregisteredIfStillWaiting() {
 	r.mu.Lock()
 	if r.state == StateRegistering {
 		r.state = StateUnregistered
-		log.Warnln("[Tailscale] status=unregistered login-server=%s state-dir=%s node-name=%s", r.cfg.LoginServer, r.stateDir, r.nodeName)
+		log.Warnln("[Tailscale] status=unregistered login-server=%s state-dir=%s node-name=%s", r.loginServerForRuntime(), r.stateDir, r.nodeName)
 		log.Warnln("[Tailscale] waiting for Headscale authorization")
 	}
 	r.mu.Unlock()

@@ -267,23 +267,25 @@ type RawNTP struct {
 }
 
 type Tailscale struct {
-	Enable           bool
-	LoginServer      string
-	StateDir         string
-	ExposeController bool
-	Mesh             bool
-	Socks5           int
-	GatewaySocks5    string
+	Enable                 bool
+	LoginServer            string
+	LoginServerIPFallbacks []string
+	StateDir               string
+	ExposeController       bool
+	Mesh                   bool
+	Socks5                 int
+	GatewaySocks5          string
 }
 
 type RawTailscale struct {
-	Enable           bool   `yaml:"enable" json:"enable"`
-	LoginServer      string `yaml:"login-server" json:"login-server"`
-	StateDir         string `yaml:"state-dir" json:"state-dir"`
-	ExposeController bool   `yaml:"expose-controller" json:"expose-controller"`
-	Mesh             bool   `yaml:"mesh" json:"mesh"`
-	Socks5           int    `yaml:"socks5" json:"socks5"`
-	GatewaySocks5    string `yaml:"gateway-socks5" json:"gateway-socks5"`
+	Enable                 bool     `yaml:"enable" json:"enable"`
+	LoginServer            string   `yaml:"login-server" json:"login-server"`
+	LoginServerIPFallbacks []string `yaml:"login-server-ip-fallbacks" json:"login-server-ip-fallbacks"`
+	StateDir               string   `yaml:"state-dir" json:"state-dir"`
+	ExposeController       bool     `yaml:"expose-controller" json:"expose-controller"`
+	Mesh                   bool     `yaml:"mesh" json:"mesh"`
+	Socks5                 int      `yaml:"socks5" json:"socks5"`
+	GatewaySocks5          string   `yaml:"gateway-socks5" json:"gateway-socks5"`
 }
 
 type RawTun struct {
@@ -848,13 +850,14 @@ func parseTailscale(cfg *RawConfig) (*Tailscale, error) {
 	ts := cfg.Tailscale
 	if !ts.Enable {
 		return &Tailscale{
-			Enable:           false,
-			LoginServer:      ts.LoginServer,
-			StateDir:         ts.StateDir,
-			ExposeController: ts.ExposeController,
-			Mesh:             ts.Mesh,
-			Socks5:           ts.Socks5,
-			GatewaySocks5:    ts.GatewaySocks5,
+			Enable:                 false,
+			LoginServer:            ts.LoginServer,
+			LoginServerIPFallbacks: ts.LoginServerIPFallbacks,
+			StateDir:               ts.StateDir,
+			ExposeController:       ts.ExposeController,
+			Mesh:                   ts.Mesh,
+			Socks5:                 ts.Socks5,
+			GatewaySocks5:          ts.GatewaySocks5,
 		}, nil
 	}
 	if strings.TrimSpace(ts.LoginServer) == "" {
@@ -870,18 +873,69 @@ func parseTailscale(cfg *RawConfig) (*Tailscale, error) {
 	if err != nil {
 		return nil, err
 	}
+	loginServerIPFallbacks, err := normalizeLoginServerIPFallbacks(ts.LoginServerIPFallbacks)
+	if err != nil {
+		return nil, err
+	}
 	if !C.Path.IsSafePath(ts.StateDir) {
 		return nil, C.Path.ErrNotSafePath(ts.StateDir)
 	}
 	return &Tailscale{
-		Enable:           ts.Enable,
-		LoginServer:      ts.LoginServer,
-		StateDir:         ts.StateDir,
-		ExposeController: ts.ExposeController,
-		Mesh:             ts.Mesh,
-		Socks5:           ts.Socks5,
-		GatewaySocks5:    gatewaySocks5,
+		Enable:                 ts.Enable,
+		LoginServer:            ts.LoginServer,
+		LoginServerIPFallbacks: loginServerIPFallbacks,
+		StateDir:               ts.StateDir,
+		ExposeController:       ts.ExposeController,
+		Mesh:                   ts.Mesh,
+		Socks5:                 ts.Socks5,
+		GatewaySocks5:          gatewaySocks5,
 	}, nil
+}
+
+func normalizeLoginServerIPFallbacks(values []string) ([]string, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	fallbacks := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		normalized, err := normalizeLoginServerIPFallback(value)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		fallbacks = append(fallbacks, normalized)
+	}
+	return fallbacks, nil
+}
+
+func normalizeLoginServerIPFallback(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", errors.New("tailscale.login-server-ip-fallbacks must not contain empty entries")
+	}
+	u, err := url.Parse(value)
+	if err != nil {
+		return "", fmt.Errorf("invalid tailscale.login-server-ip-fallbacks entry %q: %w", value, err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("tailscale.login-server-ip-fallbacks only supports http/https URLs: %s", value)
+	}
+	host := u.Hostname()
+	if host == "" {
+		return "", fmt.Errorf("tailscale.login-server-ip-fallbacks host is required: %s", value)
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return "", fmt.Errorf("tailscale.login-server-ip-fallbacks only accepts IP literal hosts, got %s", host)
+	}
+	if ip.To4() == nil && !strings.HasPrefix(u.Host, "[") {
+		return "", fmt.Errorf("tailscale.login-server-ip-fallbacks IPv6 URLs must use brackets: %s", value)
+	}
+	return value, nil
 }
 
 func normalizeGatewaySocks5(addr string) (string, error) {

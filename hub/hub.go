@@ -47,16 +47,17 @@ func ApplyConfig(cfg *config.Config) {
 	applyRoute(cfg)
 	executor.ApplyConfig(cfg, true)
 	tsnet.ApplyConfig(tsnet.Config{
-		Enable:            cfg.Tailscale.Enable,
-		LoginServer:       cfg.Tailscale.LoginServer,
-		StateDir:          cfg.Tailscale.StateDir,
-		ExposeController:  cfg.Tailscale.ExposeController,
-		Mesh:              cfg.Tailscale.Mesh,
-		Socks5:            cfg.Tailscale.Socks5,
-		GatewaySocks5:     cfg.Tailscale.GatewaySocks5,
-		ControllerAddress: cfg.Controller.ExternalController,
-		ControllerHandler: newRouteHandler(cfg),
-		Tunnel:            tunnel.Tunnel,
+		Enable:                 cfg.Tailscale.Enable,
+		LoginServer:            cfg.Tailscale.LoginServer,
+		LoginServerIPFallbacks: cfg.Tailscale.LoginServerIPFallbacks,
+		StateDir:               cfg.Tailscale.StateDir,
+		ExposeController:       cfg.Tailscale.ExposeController,
+		Mesh:                   cfg.Tailscale.Mesh,
+		Socks5:                 cfg.Tailscale.Socks5,
+		GatewaySocks5:          cfg.Tailscale.GatewaySocks5,
+		ControllerAddress:      cfg.Controller.ExternalController,
+		ControllerHandler:      newRouteHandler(cfg),
+		Tunnel:                 tunnel.Tunnel,
 	})
 }
 

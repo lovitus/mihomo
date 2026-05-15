@@ -7,6 +7,8 @@ import (
 	"errors"
 	"io"
 	"net"
+	stdhttp "net/http"
+	"net/http/httptest"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -740,6 +742,128 @@ func TestFormatStartupGraceUsesSeconds(t *testing.T) {
 	}
 }
 
+func TestSelectLoginServerUsesIPFallbacksOnly(t *testing.T) {
+	var calls []string
+	probe := func(_ context.Context, rawURL string) error {
+		calls = append(calls, rawURL)
+		if rawURL == "http://192.0.2.11:8088" {
+			return nil
+		}
+		return errors.New("unreachable")
+	}
+
+	selection := selectLoginServer(context.Background(), "https://hs.example.com", []string{
+		"http://192.0.2.10:8088",
+		"http://192.0.2.11:8088",
+	}, probe)
+	if selection.ActiveLoginServer != "http://192.0.2.11:8088" || selection.Source != "ip-fallback" {
+		t.Fatalf("selection mismatch: %+v", selection)
+	}
+	if got := strings.Join(calls, ","); got != "http://192.0.2.10:8088,http://192.0.2.11:8088" {
+		t.Fatalf("probe calls = %q, want only IP fallbacks", got)
+	}
+}
+
+func TestSelectLoginServerPrimaryIPAndFailureFallback(t *testing.T) {
+	selection := selectLoginServer(context.Background(), "http://192.0.2.10:8088", []string{"http://192.0.2.11:8088"}, func(_ context.Context, rawURL string) error {
+		if rawURL == "http://192.0.2.10:8088" {
+			return nil
+		}
+		return errors.New("unexpected fallback probe")
+	})
+	if selection.ActiveLoginServer != "http://192.0.2.10:8088" || selection.Source != "primary-ip" {
+		t.Fatalf("primary IP selection mismatch: %+v", selection)
+	}
+
+	selection = selectLoginServer(context.Background(), "https://hs.example.com", []string{"http://192.0.2.11:8088"}, func(context.Context, string) error {
+		return errors.New("unreachable")
+	})
+	if selection.ActiveLoginServer != "https://hs.example.com" || selection.Source != "primary" {
+		t.Fatalf("fallback-to-primary selection mismatch: %+v", selection)
+	}
+}
+
+func TestProbeLoginServerKeyIgnoresProxyAndRejectsRedirect(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "http://127.0.0.1:1")
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:1")
+	var resolverCalls atomic.Int32
+	oldResolver := net.DefaultResolver
+	net.DefaultResolver = &net.Resolver{
+		PreferGo: true,
+		Dial: func(context.Context, string, string) (net.Conn, error) {
+			resolverCalls.Add(1)
+			return nil, errors.New("unexpected resolver use")
+		},
+	}
+	t.Cleanup(func() {
+		net.DefaultResolver = oldResolver
+	})
+
+	okServer := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+		if r.URL.Path != "/key" {
+			t.Fatalf("probe path = %q, want /key", r.URL.Path)
+		}
+		w.WriteHeader(stdhttp.StatusOK)
+	}))
+	defer okServer.Close()
+	if err := probeLoginServerKey(context.Background(), okServer.URL); err != nil {
+		t.Fatalf("probeLoginServerKey() error = %v", err)
+	}
+	if resolverCalls.Load() != 0 {
+		t.Fatalf("probe used resolver %d times", resolverCalls.Load())
+	}
+
+	redirectServer := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+		stdhttp.Redirect(w, r, "http://example.com/key", stdhttp.StatusFound)
+	}))
+	defer redirectServer.Close()
+	if err := probeLoginServerKey(context.Background(), redirectServer.URL); err == nil || !strings.Contains(err.Error(), "HTTP 302") {
+		t.Fatalf("redirect probe error = %v, want HTTP 302", err)
+	}
+}
+
+func TestWizardLoadConfigReadsLoginServerIPFallbacks(t *testing.T) {
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(configFile, []byte(`
+tailscale:
+  login-server: https://hs.example.com
+  login-server-ip-fallbacks:
+    - http://192.0.2.10:8088
+    - http://[2001:db8::10]:8088
+  state-dir: tailscale-state
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg := wizardLoadConfig(dir, configFile)
+	if cfg.ConfigError != nil {
+		t.Fatalf("wizardLoadConfig() ConfigError = %v", cfg.ConfigError)
+	}
+	if got := strings.Join(cfg.LoginServerIPFallbacks, ","); got != "http://192.0.2.10:8088,http://[2001:db8::10]:8088" {
+		t.Fatalf("wizard fallbacks = %q", got)
+	}
+	if cfg.StateDir != filepath.Join(dir, "tailscale-state") {
+		t.Fatalf("wizard state-dir = %q", cfg.StateDir)
+	}
+}
+
+func TestWizardLoadConfigRejectsDomainLoginServerIPFallback(t *testing.T) {
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(configFile, []byte(`
+tailscale:
+  login-server: https://hs.example.com
+  login-server-ip-fallbacks:
+    - http://backup.example.com:8088
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg := wizardLoadConfig(dir, configFile)
+	if cfg.ConfigError == nil || !strings.Contains(cfg.ConfigError.Error(), "login-server-ip-fallbacks") {
+		t.Fatalf("wizard ConfigError = %v, want login-server-ip-fallbacks error", cfg.ConfigError)
+	}
+}
+
 func TestAuthURLFromTsnetUserLog(t *testing.T) {
 	const authURL = "http://headscale.example/register/nodekey:abc"
 	msg := "To start this tsnet server, restart with TS_AUTHKEY set, or go to: " + authURL
@@ -1016,6 +1140,8 @@ func TestAPIStatusLocalStatusFailureIsFailSoft(t *testing.T) {
 	rt.logs = newLogRing(tsnetLogBufferSize)
 	rt.state = StateConnected
 	rt.nodeName = "mihomo-test"
+	rt.cfg = Config{LoginServer: "https://hs.example.com"}
+	rt.activeLoginServer = "http://192.0.2.10:8088"
 	rt.tailIPs = []netip.Addr{netip.MustParseAddr("100.64.0.1")}
 	rt.statusFn = func(context.Context) (*ipnstate.Status, error) {
 		return nil, errors.New("localapi unavailable")
@@ -1031,6 +1157,9 @@ func TestAPIStatusLocalStatusFailureIsFailSoft(t *testing.T) {
 	}
 	if got := strings.Join(status.TailIPs, ","); got != "100.64.0.1" {
 		t.Fatalf("tailIPs = %q, want 100.64.0.1", got)
+	}
+	if status.LoginServer != "https://hs.example.com" || status.ActiveLoginServer != "http://192.0.2.10:8088" {
+		t.Fatalf("login server status mismatch: login=%q active=%q", status.LoginServer, status.ActiveLoginServer)
 	}
 }
 
