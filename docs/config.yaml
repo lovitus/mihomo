@@ -100,6 +100,7 @@ external-doh-server: /dns-query
 tailscale:
   enable: false
   login-server: https://hs.example.com # Headscale/Tailscale control server，enable=true 时必填
+  login-server-ip-fallbacks: [] # 可选，仅支持 http/https IPv4/IPv6 literal URL；启动前用 /key 预选可达控制面
   state-dir: tailscale # 相对路径按 mihomo home dir 解析，目录内容属于敏感身份材料
   expose-controller: false # 通过 tailnet 暴露普通 external-controller；不支持 tls/unix/pipe
   mesh: false # 在 tailnet 上暴露标准 SOCKS5 服务

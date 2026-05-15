@@ -12,22 +12,24 @@ import (
 )
 
 type APIStatus struct {
-	Enable        bool              `json:"enable"`
-	Ready         bool              `json:"ready"`
-	State         State             `json:"state"`
-	StatusError   string            `json:"statusError,omitempty"`
-	NodeName      string            `json:"nodeName,omitempty"`
-	AuthURL       string            `json:"authURL,omitempty"`
-	TailIPs       []string          `json:"tailIPs,omitempty"`
-	BackendState  string            `json:"backendState,omitempty"`
-	DaemonVersion string            `json:"daemonVersion,omitempty"`
-	HaveNodeKey   bool              `json:"haveNodeKey,omitempty"`
-	Health        []string          `json:"health,omitempty"`
-	Tailnet       *APITailnetStatus `json:"tailnet,omitempty"`
-	Self          *APIPeerStatus    `json:"self,omitempty"`
-	Peers         []APIPeerStatus   `json:"peers,omitempty"`
-	Services      *APIServices      `json:"services,omitempty"`
-	Diagnostic    *APIDiagnostic    `json:"diagnostic,omitempty"`
+	Enable            bool              `json:"enable"`
+	Ready             bool              `json:"ready"`
+	State             State             `json:"state"`
+	StatusError       string            `json:"statusError,omitempty"`
+	LoginServer       string            `json:"loginServer,omitempty"`
+	ActiveLoginServer string            `json:"activeLoginServer,omitempty"`
+	NodeName          string            `json:"nodeName,omitempty"`
+	AuthURL           string            `json:"authURL,omitempty"`
+	TailIPs           []string          `json:"tailIPs,omitempty"`
+	BackendState      string            `json:"backendState,omitempty"`
+	DaemonVersion     string            `json:"daemonVersion,omitempty"`
+	HaveNodeKey       bool              `json:"haveNodeKey,omitempty"`
+	Health            []string          `json:"health,omitempty"`
+	Tailnet           *APITailnetStatus `json:"tailnet,omitempty"`
+	Self              *APIPeerStatus    `json:"self,omitempty"`
+	Peers             []APIPeerStatus   `json:"peers,omitempty"`
+	Services          *APIServices      `json:"services,omitempty"`
+	Diagnostic        *APIDiagnostic    `json:"diagnostic,omitempty"`
 }
 
 type APITailnetStatus struct {
@@ -149,6 +151,8 @@ func (r *runtime) runtimeAPIStatus() APIStatus {
 	r.mu.RLock()
 	state := r.state
 	nodeName := r.nodeName
+	loginServer := r.cfg.LoginServer
+	activeLoginServer := r.loginServerForRuntime()
 	authURL := r.authURL
 	tailIPs := addrsToStrings(r.tailIPs)
 	meshEnabled := r.cfg.Mesh
@@ -173,12 +177,14 @@ func (r *runtime) runtimeAPIStatus() APIStatus {
 
 	diag := readStateDiagnostic(r.stateDir)
 	return APIStatus{
-		Enable:   true,
-		Ready:    state == StateConnected,
-		State:    state,
-		NodeName: nodeName,
-		AuthURL:  authURL,
-		TailIPs:  tailIPs,
+		Enable:            true,
+		Ready:             state == StateConnected,
+		State:             state,
+		LoginServer:       loginServer,
+		ActiveLoginServer: activeLoginServer,
+		NodeName:          nodeName,
+		AuthURL:           authURL,
+		TailIPs:           tailIPs,
 		Services: &APIServices{
 			Mesh: APIMeshService{
 				Enabled:           meshEnabled,

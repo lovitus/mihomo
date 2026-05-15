@@ -39,6 +39,11 @@ func RunWizard(homeDir, configFile string) int {
 
 	cfg := wizardLoadConfig(homeDir, configFile)
 
+	if cfg.ConfigError != nil {
+		fmt.Println()
+		fmt.Printf("  ERROR: %v\n", cfg.ConfigError)
+		return 1
+	}
 	if cfg.LoginServer == "" {
 		fmt.Println()
 		fmt.Println("  ERROR: no login-server configured.")
@@ -53,6 +58,9 @@ func RunWizard(homeDir, configFile string) int {
 	}
 
 	fmt.Printf("  Server:   %s\n", cfg.LoginServer)
+	if len(cfg.LoginServerIPFallbacks) > 0 {
+		fmt.Printf("  IP fallback candidates: %d\n", len(cfg.LoginServerIPFallbacks))
+	}
 	fmt.Printf("  StateDir: %s\n", cfg.StateDir)
 	fmt.Println()
 
@@ -74,13 +82,15 @@ func RunWizard(homeDir, configFile string) int {
 	fmt.Printf("Starting node: %s\n", nodeName)
 
 	disableTailscaleBackgroundLogUploads()
+	selection := selectLoginServer(context.Background(), cfg.LoginServer, cfg.LoginServerIPFallbacks, probeLoginServerKey)
+	wizardPrintLoginServerSelection(selection)
 	endResolverLifecycle := beginDefaultResolverLifecycle()
 	defer endResolverLifecycle()
 
 	server := &tsnetlib.Server{
 		Dir:        cfg.StateDir,
 		Hostname:   nodeName,
-		ControlURL: cfg.LoginServer,
+		ControlURL: selection.ActiveLoginServer,
 		Port:       0,
 		UserLogf:   func(string, ...any) {},
 	}
@@ -120,7 +130,7 @@ func RunWizard(homeDir, configFile string) int {
 				fmt.Println("  Hints:")
 				fmt.Println("    - Verify the Headscale server is reachable from this device")
 				fmt.Println("    - Check firewall/iptables rules allow outbound TCP 443")
-				fmt.Printf("    - Try: curl -v --max-time 10 %s/key\n", cfg.LoginServer)
+				fmt.Printf("    - Try: curl -v --max-time 10 %s/key\n", selection.ActiveLoginServer)
 				return 1
 			}
 			fmt.Printf("  ERROR: %v\n", err)
@@ -189,14 +199,17 @@ func RunWizard(homeDir, configFile string) int {
 // avoiding any dependency on geo-site, rules, or other mihomo subsystems.
 type wizardFileCfg struct {
 	Tailscale struct {
-		LoginServer string `yaml:"login-server"`
-		StateDir    string `yaml:"state-dir"`
+		LoginServer            string   `yaml:"login-server"`
+		LoginServerIPFallbacks []string `yaml:"login-server-ip-fallbacks"`
+		StateDir               string   `yaml:"state-dir"`
 	} `yaml:"tailscale"`
 }
 
 type wizardRunCfg struct {
-	LoginServer string
-	StateDir    string
+	LoginServer            string
+	LoginServerIPFallbacks []string
+	StateDir               string
+	ConfigError            error
 }
 
 func wizardLoadConfig(homeDir, configFile string) wizardRunCfg {
@@ -222,6 +235,10 @@ func wizardLoadConfig(homeDir, configFile string) wizardRunCfg {
 		return cfg
 	}
 	cfg.LoginServer = raw.Tailscale.LoginServer
+	if cfg.LoginServerIPFallbacks, err = normalizeLoginServerIPFallbacks(raw.Tailscale.LoginServerIPFallbacks); err != nil {
+		cfg.ConfigError = err
+		return cfg
+	}
 	stateDir := raw.Tailscale.StateDir
 	if stateDir == "" {
 		// Match config.DefaultRawConfig default so the wizard accepts the
@@ -251,4 +268,22 @@ func wizardShowStateInfo(stateDir string) {
 		fmt.Println("  Node key present — will attempt reconnect.")
 	}
 	fmt.Println()
+}
+
+func wizardPrintLoginServerSelection(selection loginServerSelection) {
+	for _, result := range selection.Results {
+		if result.Success {
+			fmt.Printf("  Login server selected: %s (%s)\n", result.URL, result.Source)
+			continue
+		}
+		fmt.Printf("  Login server probe failed: %s (%s): %v\n", result.URL, result.Source, result.Err)
+	}
+	if selection.ActiveLoginServer != selection.LoginServer {
+		fmt.Printf("  Login server configured: %s\n", selection.LoginServer)
+		fmt.Printf("  Login server active:     %s\n", selection.ActiveLoginServer)
+		return
+	}
+	if len(selection.Results) > 0 && !loginServerSelectionSucceeded(selection) {
+		fmt.Printf("  Login server active:     %s (primary; all IP probes failed)\n", selection.ActiveLoginServer)
+	}
 }

@@ -7,6 +7,7 @@ import (
 
 func TestParseTailscaleDisabledDefaults(t *testing.T) {
 	cfg := DefaultRawConfig()
+	cfg.Tailscale.LoginServerIPFallbacks = []string{"http://backup.example.com:8088"}
 	ts, err := parseTailscale(cfg)
 	if err != nil {
 		t.Fatalf("parseTailscale() error = %v", err)
@@ -22,6 +23,9 @@ func TestParseTailscaleDisabledDefaults(t *testing.T) {
 	}
 	if ts.GatewaySocks5 != "" {
 		t.Fatalf("gateway-socks5 = %q, want empty", ts.GatewaySocks5)
+	}
+	if got := strings.Join(ts.LoginServerIPFallbacks, ","); got != "http://backup.example.com:8088" {
+		t.Fatalf("disabled login-server-ip-fallbacks = %q, want raw fallback preserved", got)
 	}
 }
 
@@ -67,6 +71,46 @@ func TestParseTailscaleRejectsInvalidSocks5Port(t *testing.T) {
 		_, err := parseTailscale(cfg)
 		if err == nil || !strings.Contains(err.Error(), "tailscale.socks5") {
 			t.Fatalf("parseTailscale(port=%d) error = %v, want socks5 error", port, err)
+		}
+	}
+}
+
+func TestParseTailscaleNormalizesLoginServerIPFallbacks(t *testing.T) {
+	cfg := DefaultRawConfig()
+	cfg.Tailscale.Enable = true
+	cfg.Tailscale.LoginServer = "https://hs.example.com"
+	cfg.Tailscale.LoginServerIPFallbacks = []string{
+		" http://192.0.2.10:8088 ",
+		"http://[2001:db8::10]:8088",
+		"http://192.0.2.10:8088",
+	}
+	ts, err := parseTailscale(cfg)
+	if err != nil {
+		t.Fatalf("parseTailscale() error = %v", err)
+	}
+	got := strings.Join(ts.LoginServerIPFallbacks, ",")
+	want := "http://192.0.2.10:8088,http://[2001:db8::10]:8088"
+	if got != want {
+		t.Fatalf("login-server-ip-fallbacks = %q, want %q", got, want)
+	}
+}
+
+func TestParseTailscaleRejectsInvalidLoginServerIPFallbacks(t *testing.T) {
+	for _, fallback := range []string{
+		"",
+		"backup.example.com:8088",
+		"ftp://192.0.2.10:8088",
+		"http://backup.example.com:8088",
+		"http://:8088",
+		"http://2001:db8::10:8088",
+	} {
+		cfg := DefaultRawConfig()
+		cfg.Tailscale.Enable = true
+		cfg.Tailscale.LoginServer = "https://hs.example.com"
+		cfg.Tailscale.LoginServerIPFallbacks = []string{fallback}
+		_, err := parseTailscale(cfg)
+		if err == nil || !strings.Contains(err.Error(), "login-server-ip-fallbacks") {
+			t.Fatalf("parseTailscale(fallback=%q) error = %v, want login-server-ip-fallbacks error", fallback, err)
 		}
 	}
 }
