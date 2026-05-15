@@ -206,6 +206,23 @@ Operational notes:
 - After successful authorization, start mihomo normally with the same `state-dir`.
 - The wizard is diagnostic and registration-only. It does not expose mesh SOCKS, gateway SOCKS, controller routes, proxy listeners, or Web UI.
 - The wizard still disables Tailscale logtail uploads and uses the same default-resolver lifecycle guard as the normal embedded tsnet runtime.
+- On OpenWrt or other environments where `login-server` is a hostname and the
+  wizard cannot reach the control plane, configure `login-server-ip-fallbacks`
+  with Headscale IPv4/IPv6 literal URLs. The wizard uses the same pre-start
+  `/key` probe as normal runtime and prints the selected active login server
+  before starting `tsnet`.
+
+Example with an IP fallback:
+
+```yaml
+tailscale:
+  enable: true
+  login-server: http://headscale.example.com:8088
+  login-server-ip-fallbacks:
+    - http://192.0.2.10:8088
+    - http://[2001:db8::10]:8088
+  state-dir: tailscale
+```
 
 ## Tailnet SOCKS5 Service
 

@@ -42,6 +42,11 @@ Configuration example is located at [/docs/config.yaml](https://github.com/MetaC
 
 Documentation can be found in [mihomo Docs](https://wiki.metacubex.one/).
 
+Fork-specific features are documented in this repository. For the built-in
+tsnet/Tailscale node, including `tailscale.login-server-ip-fallbacks` and
+`-tailscale-wizard`, see
+[Built-in tsnet / Tailscale Integration](/Users/fanli/Documents/mihomo-rev/docs/tailscale-tsnet.md).
+
 ## Fork Notes
 
 This fork tracks upstream `MetaCubeX/mihomo` while preserving the fork-specific persistent pin behavior and related release workflow behavior.
