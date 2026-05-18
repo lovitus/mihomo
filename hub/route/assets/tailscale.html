@@ -203,6 +203,10 @@
     /* Offline row dim */
     tr.peer-offline td { opacity: 0.6; }
     tr.peer-offline:hover td { opacity: 1; }
+    /* Peer detail hover popup */
+    #peer-popup { position: fixed; display: none; z-index: 1000; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; box-shadow: 0 4px 20px rgba(0,0,0,.14); max-width: 480px; min-width: 260px; pointer-events: none; }
+    #peer-popup .popup-title { font-weight: 600; margin-bottom: 8px; }
+    #peer-popup .popup-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 20px; }
 
     /* Logs */
     .logs { margin: 0; padding: 0; list-style: none; max-height: 300px; overflow-y: auto; }
@@ -492,10 +496,15 @@
         $('self-ips').innerHTML = sortIPs(s.tailIPs || self.tailscaleIPs).map(esc).join('<br>') || '—';
         $('self-backend').textContent = s.backendState || '';
         const metaItems = [
-          { label: 'OS', value: self.os },
+          self.os ? { label: 'OS', value: self.os } : null,
+          self.dnsName ? { label: 'DNS name', value: self.dnsName } : null,
           self.curAddr ? { label: 'Direct addr', value: self.curAddr } : null,
           { label: 'Relay', value: self.relay || null },
+          self.addrs && self.addrs.length ? { label: 'Endpoints', value: self.addrs.join(', ') } : null,
+          self.lastHandshake ? { label: 'Last handshake', value: fmtTime(self.lastHandshake) } : null,
           self.keyExpiry ? { label: 'Key expiry', value: fmtTime(self.keyExpiry) } : null,
+          self.publicKey ? { label: 'Public key', value: self.publicKey } : null,
+          self.id ? { label: 'ID', value: self.id } : null,
         ].filter(Boolean).filter(m => m.value);
         $('self-meta').innerHTML = metaItems.map(m =>
           `<div class="self-meta-item"><div class="kv-label">${esc(m.label)}</div><div>${esc(m.value)}</div></div>`
@@ -622,6 +631,7 @@
     }
 
     function renderPeers() {
+      if (typeof _popupTr !== 'undefined' && _popupTr) { peerPopup.style.display = 'none'; _popupTr = null; }
       const q = $('search').value.trim().toLowerCase();
       let peers = ((state.status && state.status.peers) || []).filter(p => {
         if (!q) return true;
@@ -667,7 +677,7 @@
         const expiryBadge = peerExpiryBadge(p);
         const lastActive = p.online ? (p.lastWrite || p.lastHandshake) : p.lastSeen;
         const addrsTitle = (p.addrs || []).join('\n');
-        return `<tr class="${p.online ? '' : 'peer-offline'}">
+        return `<tr data-pk="${esc(p.publicKey)}" class="${p.online ? '' : 'peer-offline'}">
           <td><div class="peer-name">${esc(p.hostName || '—')}${expiryBadge}</div>${p.dnsName ? `<div class="peer-dns">${esc(p.dnsName)}</div>` : ''}${tagHtml ? `<div style="margin-top:2px">${tagHtml}</div>` : ''}</td>
           <td class="mono">${ips.length ? ips.map(esc).join('<br>') : '—'}</td>
           <td>${esc(p.os || '—')}</td>
@@ -743,6 +753,65 @@
     $('refresh').addEventListener('click', load);
     $('logout').addEventListener('click', () => { sessionStorage.removeItem(tokenKey); showLogin(false); });
     $('search').addEventListener('input', renderPeers);
+    const peerPopup = document.createElement('div');
+    peerPopup.id = 'peer-popup';
+    document.body.appendChild(peerPopup);
+    let _popupTr = null;
+    function _buildPeerPopup(p) {
+      const fields = [
+        p.dnsName ? ['DNS Name', p.dnsName] : null,
+        p.os ? ['OS', p.os] : null,
+        (p.tailscaleIPs || []).length ? ['Tailscale IPs', p.tailscaleIPs.join(', ')] : null,
+        (p.primaryRoutes || []).length ? ['Primary Routes', p.primaryRoutes.join(', ')] : null,
+        (p.tags || []).length ? ['Tags', p.tags.join(', ')] : null,
+        ['State', p.online ? (p.active ? 'active' : 'online') : (p.expired ? 'expired' : 'offline')],
+        ['Relay', p.relay || '—'],
+        ['Endpoints', (p.addrs || []).join(', ') || '—'],
+        p.curAddr ? ['Current addr', p.curAddr] : null,
+        (p.allowedIPs || []).length ? ['Allowed IPs', p.allowedIPs.join(', ')] : null,
+        (p.rxBytes || p.txBytes) ? ['Traffic ↓/↑', `${fmtBytes(p.rxBytes)} / ${fmtBytes(p.txBytes)}`] : null,
+        (p.peerAPIURL || []).length ? ['Peer API', p.peerAPIURL.join(', ')] : null,
+        p.created ? ['Created', fmtTime(p.created)] : null,
+        p.lastHandshake ? ['Last handshake', fmtTime(p.lastHandshake)] : null,
+        p.lastWrite ? ['Last write', fmtTime(p.lastWrite)] : null,
+        p.lastSeen ? ['Last seen', fmtTime(p.lastSeen)] : null,
+        p.keyExpiry ? ['Key expiry', fmtTime(p.keyExpiry)] : null,
+        p.publicKey ? ['Public key', p.publicKey] : null,
+        p.id ? ['ID', p.id] : null,
+      ].filter(Boolean);
+      peerPopup.innerHTML =
+        `<div class="popup-title">${esc(p.hostName || p.dnsName || '—')}</div>` +
+        `<div class="popup-grid">${fields.map(([k, v]) =>
+          `<div class="kv"><div class="kv-label">${esc(k)}</div><div style="font-size:11px;word-break:break-all;font-family:ui-monospace,'SF Mono',monospace">${esc(v || '—')}</div></div>`
+        ).join('')}</div>`;
+    }
+    function _positionPopup(e) {
+      const pw = peerPopup.offsetWidth || 380, ph = peerPopup.offsetHeight || 200;
+      let left = e.clientX + 14, top = e.clientY + 14;
+      if (left + pw > window.innerWidth - 8) left = e.clientX - pw - 14;
+      if (top + ph > window.innerHeight - 8) top = e.clientY - ph - 14;
+      peerPopup.style.left = left + 'px';
+      peerPopup.style.top = top + 'px';
+    }
+    $('peers').addEventListener('mouseover', e => {
+      const tr = e.target.closest('tr[data-pk]');
+      if (!tr) return;
+      if (tr !== _popupTr) {
+        _popupTr = tr;
+        const p = ((state.status && state.status.peers) || []).find(x => x.publicKey === tr.dataset.pk);
+        if (!p) return;
+        _buildPeerPopup(p);
+      }
+      peerPopup.style.display = 'block';
+      _positionPopup(e);
+    });
+    $('peers').addEventListener('mousemove', e => {
+      if (_popupTr) _positionPopup(e);
+    });
+    $('peers').addEventListener('mouseleave', () => {
+      peerPopup.style.display = 'none';
+      _popupTr = null;
+    });
     document.querySelectorAll('th[data-col]').forEach(th => {
       th.addEventListener('click', () => {
         const col = th.dataset.col;
