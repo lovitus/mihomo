@@ -421,17 +421,18 @@ Retry behavior:
 - Gateway TCP listen failures are retried in the background with the same bounded exponential backoff. This handles transient host port conflicts without requiring a mihomo reload.
 - This avoids mobile or low-power devices waking periodically just to retry listeners.
 
-## Read-only Status API And Web Page
+## Status API, Node Rename API, And Web Page
 
-The controller exposes a read-only tsnet status surface:
+The controller exposes a tsnet status surface:
 
 - `GET /tailscale`
 - `GET /tailscale/logs`
+- `PATCH /tailscale/node-name`
 - `GET /tailscale/web`
 
 Authentication:
 
-- `/tailscale` and `/tailscale/logs` reuse the existing controller Bearer secret.
+- `/tailscale`, `/tailscale/logs`, and `/tailscale/node-name` reuse the existing controller Bearer secret.
 - If the controller secret is empty, the API behaves like other unprotected controller routes and returns data directly.
 - `/tailscale/web` is public, but it is only a static HTML/CSS/JS shell. Runtime data is fetched from the protected API after the user enters the controller secret.
 - The page stores the entered secret only in browser `sessionStorage`; there is no server-side session or cookie.
@@ -444,6 +445,15 @@ Status API behavior:
 - When tsnet is disabled or the runtime is absent, the endpoint returns the minimal disabled state: `enable=false`, `state=disabled`, `ready=false`.
 - Logs are kept in memory only. Disabled/runtime-nil state returns an empty log list instead of `404` or `500`.
 - Peer `tailscaleIPs` primarily comes from `PeerStatus.TailscaleIPs`. For Headscale deployments using non-standard IPv4 node ranges that Tailscale filters out of `PeerStatus.TailscaleIPs`, single-host `AllowedIPs` are added back when they are not advertised primary routes.
+
+Node rename API behavior:
+
+- `PATCH /tailscale/node-name` accepts JSON of the form `{"name":"new-node-name"}`.
+- The endpoint writes a custom node name override to `state-dir/node-name`.
+- The new node name takes effect on the next tsnet runtime restart or mihomo restart.
+- The active runtime is not restarted by this endpoint.
+- Names must be a single DNS label: `1..63` characters, ASCII letters, digits, and hyphens only, with no leading or trailing hyphen.
+- The endpoint returns `400` for invalid JSON, invalid names, or when no tsnet runtime is active.
 
 Web page behavior:
 
@@ -461,6 +471,21 @@ Web page behavior:
 - Auth URLs are available only after API authentication and can be copied from the page.
 - Local diagnostic paths are kept in a diagnostic section and are not embedded in the static HTML shell.
 - Responses use `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, and `Referrer-Policy: no-referrer`.
+
+## Windows Firewall Helper
+
+On Windows, the embedded tsnet node may need an inbound firewall allow rule for its userspace WireGuard traffic.
+
+Runtime behavior:
+
+- After tsnet reaches `connected`, mihomo attempts to add a Windows Defender Firewall rule named `Mihomo-Tailscale-WireGuard`.
+- The rule is bound to the current mihomo executable path.
+- Existing rules with the same name are deleted before adding a new one, avoiding duplicates after upgrades or path changes.
+- If the command requires Administrator rights and fails, mihomo logs a warning and prints the equivalent manual `netsh advfirewall firewall add rule ...` command.
+- On runtime close or config reload, mihomo deletes the rule with the same name.
+- Non-Windows builds use no-op hooks.
+
+This helper is best-effort. Failing to add the rule does not disable tsnet; it only leaves Windows firewall behavior to the user's existing policy.
 
 ## Files And Packages
 
@@ -518,5 +543,5 @@ Release workflow:
 Recommended release tag for this feature branch:
 
 ```text
-v2026.04.30-persistent-pin.22-tsnet
+v2026.05.20-persistent-pin.27-tsnet
 ```

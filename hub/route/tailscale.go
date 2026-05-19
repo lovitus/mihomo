@@ -20,6 +20,7 @@ func init() {
 	Register(func(r chi.Router) {
 		r.Get("/tailscale", getTailscaleStatus)
 		r.Get("/tailscale/logs", getTailscaleLogs)
+		r.Patch("/tailscale/node-name", patchTailscaleNodeName)
 	})
 	RegisterPublic(func(r chi.Router) {
 		r.Get("/tailscale/web", getTailscaleWeb)
@@ -34,6 +35,23 @@ func getTailscaleStatus(w http.ResponseWriter, r *http.Request) {
 
 func getTailscaleLogs(w http.ResponseWriter, r *http.Request) {
 	render.JSON(w, r, tsnet.Logs())
+}
+
+func patchTailscaleNodeName(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := render.DecodeJSON(r.Body, &req); err != nil {
+		render.Status(r, http.StatusBadRequest)
+		render.JSON(w, r, newError(err.Error()))
+		return
+	}
+	if err := tsnet.RenameCurrentNode(req.Name); err != nil {
+		render.Status(r, http.StatusBadRequest)
+		render.JSON(w, r, newError(err.Error()))
+		return
+	}
+	render.NoContent(w, r)
 }
 
 func getTailscaleWeb(w http.ResponseWriter, r *http.Request) {
