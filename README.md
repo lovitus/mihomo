@@ -67,6 +67,7 @@ Reference documents in this repository:
 - [Fork Release Notes: v2026.04.30-persistent-pin.22-tsnet](/Users/fanli/Documents/mihomo-rev/docs/releases/v2026.04.30-persistent-pin.22-tsnet.md)
 - [Fork Release Notes: v2026.05.15-persistent-pin.24-tsnet](/Users/fanli/Documents/mihomo-rev/docs/releases/v2026.05.15-persistent-pin.24-tsnet.md)
 - [Fork Release Notes: v2026.05.18-persistent-pin.25-tsnet](/Users/fanli/Documents/mihomo-rev/docs/releases/v2026.05.18-persistent-pin.25-tsnet.md)
+- [Fork Release Notes: v2026.05.19-persistent-pin.26-tsnet](/Users/fanli/Documents/mihomo-rev/docs/releases/v2026.05.19-persistent-pin.26-tsnet.md)
 
 ## For development
 
