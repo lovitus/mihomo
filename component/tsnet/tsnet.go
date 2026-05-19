@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -369,6 +370,7 @@ func (r *runtime) run() {
 	if !r.markConnected(status) {
 		return
 	}
+	platformAddFirewallRule()
 
 	log.Infoln("[Tailscale] status=connected login-server=%s node-name=%s tail-ip=%s", r.loginServerForRuntime(), r.nodeName, formatTailIPs(status.TailscaleIPs))
 	r.logStateDiagnostic("connected", status.AuthURL, status)
@@ -580,6 +582,7 @@ func (r *runtime) setPendingState(state State, reason string) {
 
 func (r *runtime) Close() {
 	r.closeOnce.Do(func() {
+		platformRemoveFirewallRule()
 		r.logStateDiagnostic("close-begin", "", nil)
 		r.closed.Store(true)
 		r.cancelOnce.Do(func() { close(r.cancelCtx) })
@@ -952,6 +955,12 @@ func stableNodeName(stateDir string) (string, error) {
 	if err := os.MkdirAll(stateDir, 0o700); err != nil {
 		return "", err
 	}
+	// Custom rename override takes precedence over the generated instance ID.
+	if b, err := os.ReadFile(filepath.Join(stateDir, "node-name")); err == nil {
+		if name := strings.TrimSpace(string(b)); name != "" {
+			return name, nil
+		}
+	}
 	path := filepath.Join(stateDir, "mihomo-instance-id")
 	if b, err := os.ReadFile(path); err == nil {
 		id := strings.TrimSpace(string(b))
@@ -968,6 +977,33 @@ func stableNodeName(stateDir string) (string, error) {
 		return "", err
 	}
 	return "mihomo-" + id[:8], nil
+}
+
+// validNodeName accepts DNS labels: 1-63 chars, [A-Za-z0-9-], no leading/trailing hyphen.
+var validNodeName = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$`)
+
+// RenameNode writes a custom hostname for the Tailscale node stored in stateDir.
+// The change takes effect on the next startup. name must be a valid DNS label:
+// 1-63 characters, only letters, digits and hyphens, no leading/trailing hyphen.
+func RenameNode(stateDir, name string) error {
+	name = strings.TrimSpace(name)
+	if !validNodeName.MatchString(name) {
+		return fmt.Errorf("invalid node name %q: must be 1-63 chars, letters/digits/hyphens only, no leading/trailing hyphen", name)
+	}
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(stateDir, "node-name"), []byte(name), 0o600)
+}
+
+// RenameCurrentNode renames the active tsnet node. The new name takes effect
+// on the next restart. Returns an error if no tsnet runtime is active.
+func RenameCurrentNode(name string) error {
+	rt := current.Load().(*runtime)
+	if rt == nil {
+		return fmt.Errorf("tsnet is not running")
+	}
+	return RenameNode(rt.stateDir, name)
 }
 
 func (r *runtime) userLogf(format string, args ...any) {
