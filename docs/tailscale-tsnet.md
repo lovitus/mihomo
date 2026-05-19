@@ -453,9 +453,9 @@ Web page behavior:
 - Peer rows can be filtered by host, DNS name, OS, state, tail IP, route, and tag.
 - Peer rows can be sorted by name, first tail IP, OS, state, relay path, and last activity.
 - Peer display includes direct-vs-relay connection state, direct address details, tags, exit-node markers, near-expiry key hints, sorted tail IPs, and last refresh time.
-- Hovering a peer row opens a read-only detail popup with the peer fields already returned by the protected `/tailscale` API, including endpoint, route, traffic, timestamp, key-expiry, public-key, and ID details when available.
+- Hovering a peer row opens a read-only detail popup with the peer fields already returned by the protected `/tailscale` API, including endpoint, route, allowed-IP, traffic, peer-API, timestamp, key-expiry, public-key, ID, exit-node, sharee-node, and expired-state details when available.
 - The peer detail popup is reset whenever the peer table is re-rendered by search, sort, manual refresh, or auto-refresh, so stale details are not kept on screen.
-- Self node metadata includes DNS name, endpoint, last-handshake, public-key, and ID details when available from the protected API.
+- Self node metadata includes DNS name, endpoint, allowed-IP, peer-API, primary-route, tag, exit-node, sharee-node, expired-state, created, last-handshake, last-write, last-seen, public-key, and ID details when available from the protected API.
 - Self and peer IP lists are rendered one address per line for readability.
 - The Routes column is hidden when the current peer list has no advertised primary routes.
 - Auth URLs are available only after API authentication and can be copied from the page.
