@@ -514,12 +514,13 @@ Main modified areas:
 
 Direct dependency added:
 
-- `tailscale.com v1.68.2`
+- `tailscale.com v1.98.3`
 
 Build requirement change:
 
-- root module now requires `go 1.22.0`
-- Go 1.20 and Go 1.21 legacy build/test entries are removed
+- root module now requires `go 1.26.3`
+- Go 1.22 through Go 1.25 legacy build/test entries are removed
+- `loong64-abi1` is paused until the MetaCubeX loongarch64 custom toolchain is available at Go 1.26.3 or newer
 
 ## CI And Release Notes
 
@@ -543,5 +544,5 @@ Release workflow:
 Recommended release tag for this feature branch:
 
 ```text
-v2026.05.20-persistent-pin.27-tsnet
+v2026.05.28-persistent-pin.28-tsnet
 ```

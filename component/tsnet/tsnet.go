@@ -207,7 +207,7 @@ func ApplyConfig(cfg Config) {
 func disableTailscaleBackgroundLogUploads() {
 	disableTailscaleLogUploadsOnce.Do(func() {
 		// mihomo intentionally crashes on net.DefaultResolver usage.
-		// tsnet v1.68.2 initializes logtail on startup and otherwise tries to
+		// tsnet initializes logtail on startup and otherwise tries to
 		// resolve log.tailscale.com through the stdlib resolver path.
 		logtail.Disable()
 		envknob.SetNoLogsNoSupport()

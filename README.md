@@ -69,11 +69,12 @@ Reference documents in this repository:
 - [Fork Release Notes: v2026.05.18-persistent-pin.25-tsnet](/Users/fanli/Documents/mihomo-rev/docs/releases/v2026.05.18-persistent-pin.25-tsnet.md)
 - [Fork Release Notes: v2026.05.19-persistent-pin.26-tsnet](/Users/fanli/Documents/mihomo-rev/docs/releases/v2026.05.19-persistent-pin.26-tsnet.md)
 - [Fork Release Notes: v2026.05.20-persistent-pin.27-tsnet](/Users/fanli/Documents/mihomo-rev/docs/releases/v2026.05.20-persistent-pin.27-tsnet.md)
+- [Fork Release Notes: v2026.05.28-persistent-pin.28-tsnet](/Users/fanli/Documents/mihomo-rev/docs/releases/v2026.05.28-persistent-pin.28-tsnet.md)
 
 ## For development
 
 Requirements:
-[Go 1.22 or newer](https://go.dev/dl/)
+[Go 1.26.3 or newer](https://go.dev/dl/)
 
 Build mihomo:
 
