@@ -106,6 +106,10 @@ func (ss *Socks5) listenPacketContext(ctx context.Context, metadata *C.Metadata,
 		return
 	}
 
+	defer func(c *net.Conn) {
+		safeConnClose(*c, err)
+	}(&c)
+
 	if ss.tls {
 		cc := tls.Client(c, ss.tlsConfig)
 		err = cc.HandshakeContext(ctx)
@@ -118,10 +122,6 @@ func (ss *Socks5) listenPacketContext(ctx context.Context, metadata *C.Metadata,
 		}
 		c = cc
 	}
-
-	defer func(c net.Conn) {
-		safeConnClose(c, err)
-	}(c)
 
 	var user *socks5.User
 	if ss.user != "" {

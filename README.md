@@ -45,7 +45,7 @@ Documentation can be found in [mihomo Docs](https://wiki.metacubex.one/).
 Fork-specific features are documented in this repository. For the built-in
 tsnet/Tailscale node, including `tailscale.login-server-ip-fallbacks` and
 `-tailscale-wizard`, see
-[Built-in tsnet / Tailscale Integration](/Users/fanli/Documents/mihomo-rev/docs/tailscale-tsnet.md).
+[Built-in tsnet / Tailscale Integration](docs/tailscale-tsnet.md).
 
 ## Fork Notes
 
@@ -53,23 +53,23 @@ This fork tracks upstream `MetaCubeX/mihomo` while preserving the fork-specific 
 
 Reference documents in this repository:
 
-- [Persistent Pin Upstream Merge Playbook (Human)](/Users/fanli/Documents/mihomo-rev/docs/persistent-pin-upstream-merge-human.md)
-- [Persistent Pin Upstream Merge Playbook (AI)](/Users/fanli/Documents/mihomo-rev/docs/persistent-pin-upstream-merge-ai.md)
-- [Persistent Pin Upstream Merge Checklist](/Users/fanli/Documents/mihomo-rev/docs/persistent-pin-upstream-merge-checklist.md)
-- [Persistent Pin Upstream Merge Report: v1.19.24](/Users/fanli/Documents/mihomo-rev/docs/persistent-pin-upstream-merge-report-v1.19.24.md)
-- [Fork Release Notes: v2026.04.20-persistent-pin.5](/Users/fanli/Documents/mihomo-rev/docs/releases/v2026.04.20-persistent-pin.5.md)
-- [Built-in tsnet / Tailscale Integration](/Users/fanli/Documents/mihomo-rev/docs/tailscale-tsnet.md)
-- [Fork Release Notes: v2026.04.22-persistent-pin.6-tsnet](/Users/fanli/Documents/mihomo-rev/docs/releases/v2026.04.22-persistent-pin.6-tsnet.md)
-- [Fork Release Notes: v2026.04.28-persistent-pin.18-tsnet](/Users/fanli/Documents/mihomo-rev/docs/releases/v2026.04.28-persistent-pin.18-tsnet.md)
-- [Fork Release Notes: v2026.04.28-persistent-pin.19-tsnet](/Users/fanli/Documents/mihomo-rev/docs/releases/v2026.04.28-persistent-pin.19-tsnet.md)
-- [Fork Release Notes: v2026.04.28-persistent-pin.20-tsnet](/Users/fanli/Documents/mihomo-rev/docs/releases/v2026.04.28-persistent-pin.20-tsnet.md)
-- [Fork Release Notes: v2026.04.28-persistent-pin.21-tsnet](/Users/fanli/Documents/mihomo-rev/docs/releases/v2026.04.28-persistent-pin.21-tsnet.md)
-- [Fork Release Notes: v2026.04.30-persistent-pin.22-tsnet](/Users/fanli/Documents/mihomo-rev/docs/releases/v2026.04.30-persistent-pin.22-tsnet.md)
-- [Fork Release Notes: v2026.05.15-persistent-pin.24-tsnet](/Users/fanli/Documents/mihomo-rev/docs/releases/v2026.05.15-persistent-pin.24-tsnet.md)
-- [Fork Release Notes: v2026.05.18-persistent-pin.25-tsnet](/Users/fanli/Documents/mihomo-rev/docs/releases/v2026.05.18-persistent-pin.25-tsnet.md)
-- [Fork Release Notes: v2026.05.19-persistent-pin.26-tsnet](/Users/fanli/Documents/mihomo-rev/docs/releases/v2026.05.19-persistent-pin.26-tsnet.md)
-- [Fork Release Notes: v2026.05.20-persistent-pin.27-tsnet](/Users/fanli/Documents/mihomo-rev/docs/releases/v2026.05.20-persistent-pin.27-tsnet.md)
-- [Fork Release Notes: v2026.05.28-persistent-pin.28-tsnet](/Users/fanli/Documents/mihomo-rev/docs/releases/v2026.05.28-persistent-pin.28-tsnet.md)
+- [Persistent Pin Upstream Merge Playbook (Human)](docs/persistent-pin-upstream-merge-human.md)
+- [Persistent Pin Upstream Merge Playbook (AI)](docs/persistent-pin-upstream-merge-ai.md)
+- [Persistent Pin Upstream Merge Checklist](docs/persistent-pin-upstream-merge-checklist.md)
+- [Persistent Pin Upstream Merge Report: v1.19.24](docs/persistent-pin-upstream-merge-report-v1.19.24.md)
+- [Fork Release Notes: v2026.04.20-persistent-pin.5](docs/releases/v2026.04.20-persistent-pin.5.md)
+- [Built-in tsnet / Tailscale Integration](docs/tailscale-tsnet.md)
+- [Fork Release Notes: v2026.04.22-persistent-pin.6-tsnet](docs/releases/v2026.04.22-persistent-pin.6-tsnet.md)
+- [Fork Release Notes: v2026.04.28-persistent-pin.18-tsnet](docs/releases/v2026.04.28-persistent-pin.18-tsnet.md)
+- [Fork Release Notes: v2026.04.28-persistent-pin.19-tsnet](docs/releases/v2026.04.28-persistent-pin.19-tsnet.md)
+- [Fork Release Notes: v2026.04.28-persistent-pin.20-tsnet](docs/releases/v2026.04.28-persistent-pin.20-tsnet.md)
+- [Fork Release Notes: v2026.04.28-persistent-pin.21-tsnet](docs/releases/v2026.04.28-persistent-pin.21-tsnet.md)
+- [Fork Release Notes: v2026.04.30-persistent-pin.22-tsnet](docs/releases/v2026.04.30-persistent-pin.22-tsnet.md)
+- [Fork Release Notes: v2026.05.15-persistent-pin.24-tsnet](docs/releases/v2026.05.15-persistent-pin.24-tsnet.md)
+- [Fork Release Notes: v2026.05.18-persistent-pin.25-tsnet](docs/releases/v2026.05.18-persistent-pin.25-tsnet.md)
+- [Fork Release Notes: v2026.05.19-persistent-pin.26-tsnet](docs/releases/v2026.05.19-persistent-pin.26-tsnet.md)
+- [Fork Release Notes: v2026.05.20-persistent-pin.27-tsnet](docs/releases/v2026.05.20-persistent-pin.27-tsnet.md)
+- [Fork Release Notes: v2026.05.28-persistent-pin.28-tsnet](docs/releases/v2026.05.28-persistent-pin.28-tsnet.md)
 
 ## For development
 
