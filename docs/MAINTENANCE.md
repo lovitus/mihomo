@@ -168,3 +168,11 @@ Correct structure:
 Never use absolute /Users/... paths in markdown files.
 Use relative paths: docs/foo.md or [text](docs/foo.md)
 Check before every commit: grep -rn "/Users/" --include="*.md" .
+
+### [build.yml] legacy Go matrix must be removed on tsnet branch
+go.mod go 1.26.3 + GOTOOLCHAIN=local blocks older toolchains even when goversion is explicitly set.
+Confirmed by: GOTOOLCHAIN=local go1.25.10/bin/go list -> "go.mod requires go >= 1.26.3"
+On pin-*-tailscale branches: delete ALL matrix entries with goversion 1.22/1.23/1.24/1.25.
+Entries to delete: windows go1.22-go1.25, darwin go1.22/go1.24, linux go1.23.
+Keep: loong64-abi1 (goversion: custom, uses dedicated setup step with go 1.26.0).
+Note: persistent-pin-option branches have lower go requirement; this only applies to tsnet branches.
