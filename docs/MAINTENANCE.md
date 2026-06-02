@@ -174,5 +174,5 @@ go.mod go 1.26.3 + GOTOOLCHAIN=local blocks older toolchains even when goversion
 Confirmed by: GOTOOLCHAIN=local go1.25.10/bin/go list -> "go.mod requires go >= 1.26.3"
 On pin-*-tailscale branches: delete ALL matrix entries with goversion 1.22/1.23/1.24/1.25.
 Entries to delete: windows go1.22-go1.25, darwin go1.22/go1.24, linux go1.23.
-Keep: loong64-abi1 (goversion: custom, uses dedicated setup step with go 1.26.0).
+Suspended: loong64-abi1 -- MetaCubeX/loongarch64-golang only has go1.26.0, blocked by go.mod go 1.26.3. Re-enable when fork catches up to 1.26.3+.
 Note: persistent-pin-option branches have lower go requirement; this only applies to tsnet branches.
