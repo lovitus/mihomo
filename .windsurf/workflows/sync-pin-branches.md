@@ -50,6 +50,17 @@ Files to clean if hits found:
 - adapter/parser.go: remove case "tailscale"
 - config/config.go: remove case "tailscale" DNS entry
 
+### Absolute path check in markdown (run before every commit):
+```
+grep -rn "/Users/" --include="*.md" .
+```
+Expected: zero hits. Use repo-relative paths only.
+
+### socks5.go conflict reminder:
+After resolving adapter/outbound/socks5.go, verify defer is BEFORE the tls block:
+  defer func(c *net.Conn) { safeConnClose(*c, err) }(&c)   // must be here
+  if ss.tls { ... usedTsnet retry ... }                     // tls block after defer
+
 ## Step 4: Verify
 
 ```

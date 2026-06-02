@@ -146,3 +146,25 @@ Impact: OpenVPN outbound always advertises UDP support.
 Status: upstream bug introduced with OpenVPN feature.
 
 Both issues existed before v1.19.26. Neither is in our feature files.
+
+### [P2-lesson] socks5.go defer position on every rebase
+Root cause: our tsnet retry commit placed defer AFTER the tls block.
+Upstream keeps defer BEFORE the tls block.
+On every rebase, when resolving socks5.go conflict, verify:
+  1. defer safeConnClose must come BEFORE the if ss.tls block
+  2. The usedTsnet retry path calls c.Close() explicitly before returning -- this is correct
+  3. The non-tsnet TLS failure path (err != nil, !usedTsnet) must be covered by the defer
+Correct structure:
+  defer func(c *net.Conn) { safeConnClose(*c, err) }(&c)  // <-- BEFORE tls block
+  if ss.tls {
+    cc := tls.Client(c, ss.tlsConfig)
+    err = cc.HandshakeContext(ctx)
+    if err != nil && usedTsnet { _ = c.Close(); return retry }
+    if err != nil { return nil, fmt.Errorf(...) }  // covered by defer above
+    c = cc
+  }
+
+### [P3-lesson] README and doc links must use repo-relative paths
+Never use absolute /Users/... paths in markdown files.
+Use relative paths: docs/foo.md or [text](docs/foo.md)
+Check before every commit: grep -rn "/Users/" --include="*.md" .
