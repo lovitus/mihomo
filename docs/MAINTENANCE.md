@@ -126,3 +126,23 @@ Expected: zero hits. Fix sites: constant/features/tags.go, dns/util.go, adapter/
    on all return paths inside the poll loop. Add cancel() before each early return.
 
 5. After go mod tidy, new deps may appear (rasky/go-lzo, metacubex/ssh, etc). This is normal.
+
+## Known upstream bugs (do not fix in our branches, report upstream)
+
+These were identified during review of persistent-pin-option-1.19.26merge.
+They are NOT introduced by our features. Do not patch in our branches to avoid merge conflicts.
+
+### [P1] component/process/process_linux.go:145 -- wrong socket fallback
+When netlink returns multiple messages and none match src port+IP,
+the loop unconditionally sets uid/inode/err=nil before filtering,
+so the last unrelated socket becomes the fallback instead of ErrNotFound.
+Impact: process-based routing rules may match the wrong process.
+Status: upstream intentional design ("allow fallback"), debatable correctness.
+
+### [P2] adapter/outbound/openvpn.go:91 -- UDP option ignored
+BaseOption is hardcoded UDP:true regardless of option.UDP (line 59).
+Users setting udp: false in OpenVPN config have no effect.
+Impact: OpenVPN outbound always advertises UDP support.
+Status: upstream bug introduced with OpenVPN feature.
+
+Both issues existed before v1.19.26. Neither is in our feature files.
