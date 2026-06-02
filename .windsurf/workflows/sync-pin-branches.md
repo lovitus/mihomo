@@ -56,6 +56,15 @@ grep -rn "/Users/" --include="*.md" .
 ```
 Expected: zero hits. Use repo-relative paths only.
 
+### Dependency version check (run after rebase of tsnet branch):
+After rebase, tailscale.com may pin metacubex/tls and metacubex/http to older versions.
+Check and upgrade to match persistent-pin-option branch:
+```
+git show persistent-pin-option-NEW_VERmerge:go.mod | grep "metacubex/tls\|metacubex/http\|metacubex/quic-go"
+go get github.com/metacubex/tls@<version> github.com/metacubex/http@<version> github.com/metacubex/quic-go@<version>
+go build ./... && go test ./listener/inbound/... -run TestInboundTrustTunnel_H2
+```
+
 ### socks5.go conflict reminder:
 After resolving adapter/outbound/socks5.go, verify defer is BEFORE the tls block:
   defer func(c *net.Conn) { safeConnClose(*c, err) }(&c)   // must be here

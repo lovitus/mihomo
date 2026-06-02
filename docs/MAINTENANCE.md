@@ -176,3 +176,11 @@ On pin-*-tailscale branches: delete ALL matrix entries with goversion 1.22/1.23/
 Entries to delete: windows go1.22-go1.25, darwin go1.22/go1.24, linux go1.23.
 Suspended: loong64-abi1 -- MetaCubeX/loongarch64-golang only has go1.26.0, blocked by go.mod go 1.26.3. Re-enable when fork catches up to 1.26.3+.
 Note: persistent-pin-option branches have lower go requirement; this only applies to tsnet branches.
+
+### [go.mod dep mismatch] metacubex/tls + metacubex/http must match persistent-pin branch
+After rebase, tailscale.com deps may pin metacubex/tls and metacubex/http to older versions.
+This breaks listener/inbound tests (TestInboundTrustTunnel_H2) with EOF + authorization failed.
+Fix: after rebase, run:
+  go get github.com/metacubex/tls@vX.X.X github.com/metacubex/http@vX.X.X
+Use same versions as persistent-pin-option branch (check with git show persistent-pin-option-...:go.mod).
+Then: go build ./... && go test ./listener/inbound/... -run TestInboundTrustTunnel_H2 locally.
