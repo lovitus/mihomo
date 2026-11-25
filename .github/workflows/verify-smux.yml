@@ -1,0 +1,38 @@
+name: verify-smux
+
+on:
+  workflow_dispatch:
+    inputs:
+      without_fix:
+        description: Restore the unfixed parser first to prove the test fails
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        go-version: ['1.20', '1.26']
+      fail-fast: false
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: 0
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+      - name: Restore the unfixed parser
+        if: inputs.without_fix
+        run: git show HEAD~1:adapter/parser.go > adapter/parser.go
+      - name: Smux regression test
+        run: go test -run TestParseProxyClosesOutboundOnSmuxError -count=1 -v ./adapter/
+      - name: Adapter and DNS packages
+        if: '!inputs.without_fix'
+        run: go test -count=1 ./adapter/ ./dns/
