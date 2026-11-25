@@ -24,13 +24,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 3
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
       - name: Restore the unfixed parser
         if: inputs.without_fix
-        run: git show HEAD~1:adapter/parser.go > adapter/parser.go
+        run: git show HEAD~2:adapter/parser.go > adapter/parser.go
       - name: Smux regression test
         run: go test -run TestParseProxyClosesOutboundOnSmuxError -count=1 -v ./adapter/
       - name: Adapter and DNS packages
