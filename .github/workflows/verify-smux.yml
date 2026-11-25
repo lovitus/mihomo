@@ -30,7 +30,10 @@ jobs:
           go-version: ${{ matrix.go-version }}
       - name: Restore the unfixed parser
         if: inputs.without_fix
-        run: git show HEAD~2:adapter/parser.go > adapter/parser.go
+        run: |
+          git fetch --depth=1 https://github.com/MetaCubeX/mihomo.git c7af25c3a5b4dba2e03b0e0b6b0a3c1e0f27d5b1 2>/dev/null || git fetch --depth=1 https://github.com/MetaCubeX/mihomo.git Alpha
+          git show FETCH_HEAD:adapter/parser.go > adapter/parser.go
+          if grep -q '_ = proxy.Close()' adapter/parser.go; then echo 'unfixed parser unexpectedly contains the fix'; exit 1; fi
       - name: Smux regression test
         run: go test -run TestParseProxyClosesOutboundOnSmuxError -count=1 -v ./adapter/
       - name: Adapter and DNS packages
